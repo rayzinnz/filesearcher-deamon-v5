@@ -1,0 +1,29 @@
+﻿# https://toml.io/en/
+
+# [[file_set]]
+# name = name of file set
+# local_root_path = 'C:\files_to_scan'
+# include_subdirs = true
+# include_regex = '(?i).*\.py$'
+# exclude_regex = '(?i)([\\/]\.)|([\\/]~)|([\\/]\$)|(__pycache__)|(\.pyc$)|([\\/]build[\\/])|([\\/]target[\\/](debug|release)[\\/])|([\\/]Staging[\\/])|([\\/]node_modules[\\/])|([\\/]edcache[\\/])'
+#            OR = "standard_file_exclusion"
+# dt_from = 2025-11-15
+# dt_to = 2025-12-31
+# db_dir = 'C:\database\name_of_file_set'
+
+[global]
+standard_file_exclusion = '(?i)([\\/]\.)|([\\/]~)|([\\/]\$)|(__pycache__)|(\.pyc$)|([\\/]build[\\/])|([\\/]target[\\/](debug|release)[\\/])|([\\/]Staging[\\/])|([\\/]node_modules[\\/])|([\\/]edcache[\\/])'
+
+[[file_set]]
+name = "test_set"
+local_root_path = 'C:\Users\hrag\Sync\Programming\python\FileSearcher\test'
+include_subdirs = true
+exclude_regex = "standard_file_exclusion"
+db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set'
+
+[[file_set]]
+name = "dump"
+local_root_path = 'C:\Users\hrag\DUMP'
+include_subdirs = false
+exclude_regex = "standard_file_exclusion"
+db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\dump'
