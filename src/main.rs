@@ -1,4 +1,4 @@
-use chrono::{DateTime, Local};
+use chrono::{DateTime, Local, Utc};
 use crc_fast::{checksum_file, CrcAlgorithm::Crc64Nvme};
 use extract_text::*;
 use helper_lib::{
@@ -147,7 +147,7 @@ fn main() {
 
     let keep_going = Arc::new(AtomicBool::new(true));
     let keep_going_flag = keep_going.clone();
-    let _signaler_handle = thread::spawn(move || {watch_for_quit(keep_going_flag);});
+    let watch_for_quit_handle = thread::spawn(move || {watch_for_quit(keep_going_flag);});
 
 	// let mut files_sets:Vec<FilesSet> = Vec::new();
 	// setup_files_sets(&mut files_sets);
@@ -168,6 +168,9 @@ fn main() {
 	}
 
 	keep_going.store(false, Ordering::Relaxed);
+	if let Err(e) = watch_for_quit_handle.join() {
+		error!("watch_for_quit thread join error: {:?}", e);
+	}
 }
 
 #[derive(Debug)]
@@ -306,10 +309,10 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			break;
 		}
 		if file_to_scan.path.exists() {
-			// let filetimeutc: DateTime<Utc> = file_to_scan.mdate.into();
+			let filetimeutc: DateTime<Utc> = file_to_scan.mdate.into();
 			let filetimelocal: DateTime<Local> = file_to_scan.mdate.into();
 			//let filetimeunix: i64 = file_to_scan.mdate.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64; //i64 not u64 so this can go into sqlite
-			let filetimeunix: i64 = filetimelocal.timestamp();
+			let filetimeunix: i64 = filetimeutc.timestamp();
 			info!("{}: {} ({}/{}) {}", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy());
 			let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
 			let relative_path = path_to_agnostic_relative(&file_to_scan.path.parent().unwrap(), &files_set.local_root_path);
@@ -391,12 +394,14 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 									break;
 								}
 								// println!("file_content2: {:?}", file_content2);
+								// println!("current filename and parent_files: {}, {:?}", file_content.filename, file_content.parent_files);
 								let expected_filename = file_content.parent_files.last().unwrap();
 								let expected_parent_files = &file_content.parent_files[0..file_content.parent_files.len()-1];
-								// println!("expected_filename: {}", expected_filename);
-								// println!("expected_parent_files: {:?}", expected_parent_files);
+								// println!("expected_filename: {}, comparison_filename: {}", expected_filename, file_content2.filename);
+								// println!("expected_parent_files: {:?}, comparison parent_files {:?}", expected_parent_files, file_content2.parent_files);
 								if file_content2.filename==*expected_filename && file_content2.parent_files == expected_parent_files {
 									links.insert(parent_files.to_vec(), (ic2, -1));
+									// println!("links: {:#?}", links);
 									found_parent_file_content = true;
 								}
 							}
@@ -471,8 +476,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											}
 											//main
 											let conn = Connection::open(&db_path_main).unwrap();
-											let sql = format!("UPDATE fsearch SET modified_localtime={} WHERE frid = {}",
-												dbfmt_t(&filetimelocal),
+											let sql = format!("UPDATE fsearch SET modified_utc={} WHERE frid = {}",
+												dbfmt_t(&filetimeutc),
 												dbfmt_t(&rid),
 											);
 											if let Err(e) = conn.execute(&sql, []) {
@@ -500,8 +505,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											}
 											//main
 											let conn = Connection::open(&db_path_main).unwrap();
-											let sql = format!("UPDATE fsearch SET modified_localtime={} WHERE frid = {}",
-												dbfmt_t(&filetimelocal),
+											let sql = format!("UPDATE fsearch SET modified_utc={} WHERE frid = {}",
+												dbfmt_t(&filetimeutc),
 												dbfmt_t(&rid),
 											);
 											if let Err(e) = conn.execute(&sql, []) {
@@ -540,11 +545,11 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 										//main
 										let conn = Connection::open(&db_path_main).unwrap();
 										let file_extension = file_content.filename.to_lowercase().split('.').last().unwrap().to_string();
-										let sql = format!("INSERT INTO fsearch (frid,filename_search,path_search,modified_localtime,filename_ext) VALUES ({},{},{},{},{})",
+										let sql = format!("INSERT INTO fsearch (frid,filename_search,path_search,modified_utc,filename_ext) VALUES ({},{},{},{},{})",
 											dbfmt_t(&frid),
 											dbfmt_t(&file_content.filename.to_lowercase()),
 											dbfmt_t(&relative_path.to_lowercase()),
-											dbfmt_t(&filetimelocal),
+											dbfmt_t(&filetimeutc),
 											dbfmt_t(&file_extension),
 										);
 										if let Err(e) = conn.execute(&sql, []) {
