@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS fsearch
 frid INT
 ,filename_search TEXT
 ,path_search TEXT
-,modified_localtime TEXT
+,modified_utc TEXT
 ,filename_ext TEXT
 );
 "#));

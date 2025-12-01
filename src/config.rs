@@ -1,7 +1,7 @@
 ﻿use chrono::NaiveDate;
 use log::*;
 use serde::Deserialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{fs, path::PathBuf};
 
 const APP_NAME: &str = "file_searcher_deamon_v5";
 
