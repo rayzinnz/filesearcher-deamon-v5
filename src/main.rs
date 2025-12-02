@@ -168,6 +168,7 @@ fn main() {
 	}
 
 	keep_going.store(false, Ordering::Relaxed);
+	#[cfg(target_os = "linux")]
 	if let Err(e) = watch_for_quit_handle.join() {
 		error!("watch_for_quit thread join error: {:?}", e);
 	}
