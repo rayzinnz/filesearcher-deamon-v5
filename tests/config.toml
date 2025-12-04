@@ -21,12 +21,12 @@ standard_file_exclusion = '(?i)([\\/]\.)|([\\/]~)|([\\/]\$)|(__pycache__)|(\.pyc
 # exclude_regex = "standard_file_exclusion"
 # db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set'
 
-[[file_set]]
-name = "test_set2"
-local_root_path = 'C:\Users\hrag\Sync\Programming\rust\rust-extract-text\tests\resources\files_to_scan'
-include_subdirs = true
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set2'
+# [[file_set]]
+# name = "test_set2"
+# local_root_path = 'C:\Users\hrag\Sync\Programming\rust\rust-extract-text\tests\resources\files_to_scan'
+# include_subdirs = true
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set2'
 
 # [[file_set]]
 # name = "dump"
@@ -41,3 +41,10 @@ db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set2'
 # include_subdirs = true
 # exclude_regex = "standard_file_exclusion"
 # db_dir = '/home/ray/dbs/rays'
+
+[[file_set]]
+name = "test_set2"
+local_root_path = '/home/ray/MEGA/Rays/Programming/rust/rust-extract-text/tests/resources/files_to_scan'
+include_subdirs = true
+exclude_regex = "standard_file_exclusion"
+db_dir = '/home/ray/dbs/files_to_scan'
