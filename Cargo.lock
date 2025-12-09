@@ -155,9 +155,8 @@ dependencies = [
 
 [[package]]
 name = "calamine"
-version = "0.31.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da56b262e8a827c6b12c3dde4ea4622e0ff542bd2e9ea5855e4cb523481d77b7"
+version = "0.32.0"
+source = "git+https://github.com/rayzinnz/calamine.git#454e9b63ed7610df1319d4621c23b8115f251bb5"
 dependencies = [
  "atoi_simd",
  "byteorder",
@@ -505,7 +504,7 @@ checksum = "dea2df4cf52843e0452895c455a1a2cfbb842a1e7329671acf418fdc53ed4c59"
 [[package]]
 name = "extract_text"
 version = "0.1.0"
-source = "git+https://github.com/rayzinnz/rust-extract-text.git#111eb61b9ad079d0a258340ac24d8a620bb2a0c5"
+source = "git+https://github.com/rayzinnz/rust-extract-text.git#61dc773078e70b5ce553ef1b3e680329cd506c92"
 dependencies = [
  "calamine",
  "cfb",

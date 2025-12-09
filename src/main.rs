@@ -3,6 +3,7 @@ use crc_fast::{checksum_file, CrcAlgorithm::Crc64Nvme};
 use extract_text::*;
 use helper_lib::{
 	self,
+	setup_logger,
 	watch_for_quit,
 	where_sql,
 	datetime::naivedate_to_local,
@@ -12,7 +13,6 @@ use helper_lib::{
 use log::*;
 use regex::Regex;
 use rusqlite::{Connection};
-use simplelog::*;
 use std::{
 	cmp::Reverse, collections::HashMap, error::Error, fs, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread::{self, JoinHandle}
 };
@@ -133,17 +133,7 @@ fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 }
 
 fn main() {
-	let logger_config = ConfigBuilder::new()
-		.set_time_offset_to_local().expect("Failed to get local time offset")
-		.set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond digits:3]"))
-		.build();
-	CombinedLogger::init(
-		vec![
-			TermLogger::new(LevelFilter::Info, logger_config, TerminalMode::Mixed, ColorChoice::Auto),
-			// TermLogger::new(LevelFilter::Debug, Config::default(), TerminalMode::Mixed, ColorChoice::Auto),
-			// WriteLogger::new(LevelFilter::Error, Config::default(), File::create("my_rust_binary.log").unwrap()),
-		]
-	).unwrap();
+	setup_logger(LevelFilter::Info);
 
     let keep_going = Arc::new(AtomicBool::new(true));
     let keep_going_flag = keep_going.clone();
@@ -157,7 +147,10 @@ fn main() {
 	let mut threads_handles: Vec<JoinHandle<()>> = Vec::new();
 	for files_set in files_sets {
 		let keep_going_flag = keep_going.clone();
-		let join_handle = thread::spawn(move || {update_fileset(keep_going_flag, files_set);});
+		let join_handle = thread::Builder::new()
+			.name(files_set.name.to_string())
+			.spawn(move || {update_fileset(keep_going_flag, files_set);})
+			.expect("Failed to spawn thread");
 		threads_handles.push(join_handle);
 	}
 
@@ -231,6 +224,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 		dt_to = None;
 	}
 	// println!("max_folder_depth: {}", max_folder_depth);
+	let mut file_count:usize = 0;
 	for entry in WalkDir::new(&files_set.local_root_path)
 		.max_depth(max_folder_depth)
 		.into_iter()
@@ -242,7 +236,11 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 		
         // Process only files (not directories)
 		if path.is_file() {
-			// println!("{:?}", path);
+			file_count += 1;
+			trace!("{:?}", path);
+			if file_count % 10000 == 0 {
+				info!("{}: scanned {} files", files_set.name, file_count);
+			}
 			match path.metadata() {
 				Ok(path_metadata) => {
 					match path_metadata.modified() {
@@ -317,7 +315,10 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			let filetimelocal: DateTime<Local> = file_to_scan.mdate.into();
 			//let filetimeunix: i64 = file_to_scan.mdate.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64; //i64 not u64 so this can go into sqlite
 			let filetimeunix: i64 = filetimeutc.timestamp();
-			info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
+			trace!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
+			if ifile % 10000 ==0 {
+				info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
+			}
 			let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
 			let relative_path = path_to_agnostic_relative(&file_to_scan.path.parent().unwrap(), &files_set.local_root_path);
 			// println!("relative_path {}", relative_path);
@@ -331,8 +332,10 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 					if top_parent_row.is_some() {
 						let top_parent_crc = top_parent_row.unwrap().1;
 						if top_parent_crc==parent_crc {
-							info!("{}: CRC match, so skip.", files_set.name);
+							trace!("{}: CRC match, so skip.", files_set.name);
 							continue;
+						} else {
+							info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
 						}
 						let top_parent_rid = top_parent_row.unwrap().0;
 						let sql = format!("SELECT rid, filename, depth, parent_rid, crc FROM f WHERE top_parent_rid = {} ORDER BY rid", top_parent_rid);
@@ -598,6 +601,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 				}
 				Err(e) => {
 					keep_going.store(false, Ordering::Relaxed);
+					error!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
 					panic!("Error extracting text: {}", e);
 				}
 			}
