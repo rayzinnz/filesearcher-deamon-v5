@@ -105,25 +105,25 @@ fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 			let conn = Connection::open(&db_path_main)?;
 			let sqls = sql_initialise::main_db();
 			for sql in sqls {
-				let _changes = conn.execute(&sql, [])?;
+				let _changes = conn.execute_batch(&sql)?;
 			}
 			let sqls = sql_initialise::insert_settings(&files_set.local_root_path.to_string_lossy());
 			for sql in sqls {
-				let _changes = conn.execute(&sql, [])?;
+				let _changes = conn.execute_batch(&sql)?;
 			}
 		}
 		{
 			let conn = Connection::open(&db_path_metadata)?;
 			let sqls = sql_initialise::metadata_db();
 			for sql in sqls {
-				let _changes = conn.execute(&sql, [])?;
+				let _changes = conn.execute_batch(&sql)?;
 			}
 		}
 		{
 			let conn = Connection::open(&db_path_contents)?;
 			let sqls = sql_initialise::content_db();
 			for sql in sqls {
-				let _changes = conn.execute(&sql, [])?;
+				let _changes = conn.execute_batch(&sql)?;
 			}
 		}
 	}
@@ -147,7 +147,7 @@ fn main() {
 
     let keep_going = Arc::new(AtomicBool::new(true));
     let keep_going_flag = keep_going.clone();
-    let watch_for_quit_handle = thread::spawn(move || {watch_for_quit(keep_going_flag);});
+    let _watch_for_quit_handle = thread::spawn(move || {watch_for_quit(keep_going_flag);});
 
 	// let mut files_sets:Vec<FilesSet> = Vec::new();
 	// setup_files_sets(&mut files_sets);
@@ -169,7 +169,7 @@ fn main() {
 
 	keep_going.store(false, Ordering::Relaxed);
 	#[cfg(target_os = "linux")]
-	if let Err(e) = watch_for_quit_handle.join() {
+	if let Err(e) = _watch_for_quit_handle.join() {
 		error!("watch_for_quit thread join error: {:?}", e);
 	}
 }
@@ -185,6 +185,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 	// println!("{:?}", files_set);
 
 	if let Err(e) = initalise_database(&files_set) {
+		keep_going.store(false, Ordering::Relaxed);
 		panic!("Error initialising main db: {}", e)
 	}
 
@@ -279,11 +280,13 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 							}
 						}
 						Err(e) => {
+							keep_going.store(false, Ordering::Relaxed);
 							panic!("Error getting file modified time: {:?}", e);
 						}
 					}
 				}
 				Err(e) => {
+					keep_going.store(false, Ordering::Relaxed);
 					panic!("Could not get file metadata: {}", e);
 				}
 			}
@@ -314,7 +317,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			let filetimelocal: DateTime<Local> = file_to_scan.mdate.into();
 			//let filetimeunix: i64 = file_to_scan.mdate.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64; //i64 not u64 so this can go into sqlite
 			let filetimeunix: i64 = filetimeutc.timestamp();
-			info!("{}: {} ({}/{}) {}", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy());
+			info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
 			let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
 			let relative_path = path_to_agnostic_relative(&file_to_scan.path.parent().unwrap(), &files_set.local_root_path);
 			// println!("relative_path {}", relative_path);
@@ -358,12 +361,14 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								}
 							}
 							Err(e) => {
+								keep_going.store(false, Ordering::Relaxed);
 								panic!("Error fetching pre scanned items: {}", e);
 							}
 						}
 					}
 				}
 				Err(e) => {
+					keep_going.store(false, Ordering::Relaxed);
 					panic!("Error fetching top_parent_rid: {}", e);
 				}
 			}
@@ -374,11 +379,13 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 					// println!("{:#?}", contents);
 					//always at least one file, even if empty
 					if contents.is_empty() {
+						keep_going.store(false, Ordering::Relaxed);
 						panic!("Unexpected empty Vec<FileListItem> from extract_text_from_file()");
 					}
 					//first item is always parent, with 0 parent files
 					let parent_item = &contents[0];
 					if !parent_item.parent_files.is_empty() {
+						keep_going.store(false, Ordering::Relaxed);
 						panic!("Unexpected parent_files in parent item from extract_text_from_file(): {:#?}", parent_item);
 					}
 
@@ -407,6 +414,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								}
 							}
 							if !found_parent_file_content {
+								keep_going.store(false, Ordering::Relaxed);
 								panic!("Parent FileListItem not found for file {:?}", file_to_scan.path)
 							}
 						}
@@ -434,12 +442,14 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								match query_to_i64(&db_path_metadata, &sql) {
 									Ok(rid) => {
 										if rid.is_none() {
+											keep_going.store(false, Ordering::Relaxed);
 											panic!("Couldn't retrieve parent_rid for\n{}", sql);
 										}
 										parent_rid = rid;
 										links.insert(file_content.parent_files.to_vec(), (link.0, parent_rid.unwrap()));
 									}
 									Err(e) => {
+										keep_going.store(false, Ordering::Relaxed);
 										panic!("Error fetching parent_rid: {}", e);
 									}
 								}
@@ -462,6 +472,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 										if crc != file_content.crc {
 											info!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
 											if file_content.text_contents.is_none() {
+												keep_going.store(false, Ordering::Relaxed);
 												panic!("file has different crc, need to update database.\nBUT file_content.text_contents is None!");
 											}
 											//meta
@@ -472,7 +483,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												dbfmt_t(&file_content.crc),
 												dbfmt_t(&rid)
 											);
-											if let Err(e) = conn.execute(&sql, []) {
+											if let Err(e) = conn.execute_batch(&sql) {
+												keep_going.store(false, Ordering::Relaxed);
 												panic!("Could not update f at rid={}.\n{}", rid, e);
 											}
 											//main
@@ -481,16 +493,18 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												dbfmt_t(&filetimeutc),
 												dbfmt_t(&rid),
 											);
-											if let Err(e) = conn.execute(&sql, []) {
+											if let Err(e) = conn.execute_batch(&sql) {
+												keep_going.store(false, Ordering::Relaxed);
 												panic!("Could not update fsearch at frid={}.\n{}", rid, e);
 											}
 											//contents
 											let conn = Connection::open(&db_path_contents).unwrap();
 											let sql = format!("UPDATE t SET contents = {} WHERE frid = {}",
-												dbfmt(file_content.text_contents.map(|s| s.to_lowercase())),
+												dbfmt(file_content.text_contents),
 												dbfmt_t(&rid)
 											);
-											if let Err(e) = conn.execute(&sql, []) {
+											if let Err(e) = conn.execute_batch(&sql) {
+												keep_going.store(false, Ordering::Relaxed);
 												panic!("Could not update contents at frid={}.\n{}", rid, e);
 											}
 										} else if ftime != filetimeunix {
@@ -501,7 +515,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												dbfmt_t(&filetimeunix),
 												dbfmt_t(&rid)
 											);
-											if let Err(e) = conn.execute(&sql, []) {
+											if let Err(e) = conn.execute_batch(&sql) {
+												keep_going.store(false, Ordering::Relaxed);
 												panic!("Could not update f at rid={}.\n{}", rid, e);
 											}
 											//main
@@ -510,7 +525,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												dbfmt_t(&filetimeutc),
 												dbfmt_t(&rid),
 											);
-											if let Err(e) = conn.execute(&sql, []) {
+											if let Err(e) = conn.execute_batch(&sql) {
+												keep_going.store(false, Ordering::Relaxed);
 												panic!("Could not update fsearch at frid={}.\n{}", rid, e);
 											}
 										} else {
@@ -531,7 +547,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											dbfmt_t(&depth),
 											dbfmt(parent_rid)
 										);
-										if let Err(e) = conn.execute(&sql, []) {
+										if let Err(e) = conn.execute_batch(&sql) {
+											keep_going.store(false, Ordering::Relaxed);
 											panic!("Could not insert new row into f.\n{}", e);
 										}
 										//get frid
@@ -540,7 +557,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											top_parent_rid = frid;
 										}
 										let sql = format!("UPDATE f SET top_parent_rid = {} WHERE rid = {}", top_parent_rid, frid);
-										if let Err(e) = conn.execute(&sql, []) {
+										if let Err(e) = conn.execute_batch(&sql) {
+											keep_going.store(false, Ordering::Relaxed);
 											panic!("Could not insert new row into f.\n{}", e);
 										}
 										//main
@@ -553,28 +571,33 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											dbfmt_t(&filetimeutc),
 											dbfmt_t(&file_extension),
 										);
-										if let Err(e) = conn.execute(&sql, []) {
+										if let Err(e) = conn.execute_batch(&sql) {
+											keep_going.store(false, Ordering::Relaxed);
 											panic!("Could not insert new row into fsearch.\n{}", e);
 										}
 										//contents
 										let conn = Connection::open(&db_path_contents).unwrap();
+										// for c in file_content.text_contents.clone().unwrap().as_bytes() { print!("{}-", c) }
 										let sql = format!("INSERT INTO t (frid,contents) VALUES ({},{})",
 											dbfmt_t(&frid),
-											dbfmt(file_content.text_contents.map(|s| s.to_lowercase()))
+											dbfmt(file_content.text_contents)
 										);
-										if let Err(e) = conn.execute(&sql, []) {
+										if let Err(e) = conn.execute_batch(&sql) {
+											keep_going.store(false, Ordering::Relaxed);
 											panic!("Could not insert new row into contents.\n{}", e);
 										}
 									}
 								}
 							}
 							Err(e) => {
+								keep_going.store(false, Ordering::Relaxed);
 								panic!("Error running query: {}\n{}", e, sql);
 							}
 						}
 					}
 				}
 				Err(e) => {
+					keep_going.store(false, Ordering::Relaxed);
 					panic!("Error extracting text: {}", e);
 				}
 			}
