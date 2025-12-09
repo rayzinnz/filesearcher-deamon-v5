@@ -504,7 +504,7 @@ checksum = "dea2df4cf52843e0452895c455a1a2cfbb842a1e7329671acf418fdc53ed4c59"
 [[package]]
 name = "extract_text"
 version = "0.1.0"
-source = "git+https://github.com/rayzinnz/rust-extract-text.git#61dc773078e70b5ce553ef1b3e680329cd506c92"
+source = "git+https://github.com/rayzinnz/rust-extract-text.git#e730b1d2f3ba5a8b4743cbfdb0677adb18bfdb18"
 dependencies = [
  "calamine",
  "cfb",

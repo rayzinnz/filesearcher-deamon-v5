@@ -304,6 +304,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 	info!("{}: Extracting text from {} files", files_set.name, files_to_scan.len());
 
 	//flag all files to be deleted. Then unflag them 1-by-1.
+	//ALSO note any directories no longer present
 	for (ifile, file_to_scan) in files_to_scan.iter().enumerate() {
 		//if the drive or network path have disconnected, then exit now.
 		if !files_set.local_root_path.exists() {
@@ -316,7 +317,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			//let filetimeunix: i64 = file_to_scan.mdate.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64; //i64 not u64 so this can go into sqlite
 			let filetimeunix: i64 = filetimeutc.timestamp();
 			trace!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
-			if ifile % 10000 ==0 {
+			if (ifile+1) % 10000 ==0 {
 				info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
 			}
 			let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
@@ -368,6 +369,8 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								panic!("Error fetching pre scanned items: {}", e);
 							}
 						}
+					} else {
+						info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), file_to_scan.size);
 					}
 				}
 				Err(e) => {
@@ -460,7 +463,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								parent_rid = Some(link.1);
 							}
 						}
-						info!("{}:  {}: {:?}", files_set.name, file_content.filename, file_content.parent_files);
+						trace!("{}:  {}: {:?}", files_set.name, file_content.filename, file_content.parent_files);
 						//does this item exist in db?
 						let sql = where_sql!("SELECT rid, crc, time FROM f WHERE {} AND {} AND {}",
 							("parent_rid", dbfmt_comp(parent_rid, CompOp::Eq)),
@@ -473,7 +476,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 									Some((rid, crc, ftime)) => {
 										//row exists, does the data need updating?
 										if crc != file_content.crc {
-											info!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
+											trace!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
 											if file_content.text_contents.is_none() {
 												keep_going.store(false, Ordering::Relaxed);
 												panic!("file has different crc, need to update database.\nBUT file_content.text_contents is None!");
@@ -511,7 +514,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												panic!("Could not update contents at frid={}.\n{}", rid, e);
 											}
 										} else if ftime != filetimeunix {
-											info!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name, file_content.filename);
+											trace!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name, file_content.filename);
 											//meta
 											let conn = Connection::open(&db_path_metadata).unwrap();
 											let sql = format!("UPDATE f SET time={} WHERE rid={}",
@@ -533,12 +536,12 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												panic!("Could not update fsearch at frid={}.\n{}", rid, e);
 											}
 										} else {
-											info!("{}:    {} has same crc, no need to update database.", files_set.name, file_content.filename);
+											trace!("{}:    {} has same crc, no need to update database.", files_set.name, file_content.filename);
 										}
 									}
 									None => {
 										//item doesn't exist in database, insert new row
-										info!("{}:     file is not in database, inserting.", files_set.name);
+										trace!("{}:     file is not in database, inserting.", files_set.name);
 										//meta
 										let conn = Connection::open(&db_path_metadata).unwrap();
 										let sql = format!("INSERT INTO f (filename,path,size,time,crc,depth,parent_rid) VALUES ({},{},{},{},{},{},{})",
