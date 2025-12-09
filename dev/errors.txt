@@ -1,0 +1,19 @@
+﻿let conn = Connection::open(&db_path_contents).unwrap();
+let sql = format!("INSERT INTO t (frid,contents) VALUES ({},{})",
+	dbfmt_t(&frid),
+	dbfmt(file_content.text_contents)
+);
+if let Err(e) = conn.execute_batch(&sql) {
+	panic!("Could not insert new row into contents.\n{}", e);
+}
+
+========================
+
+Could not insert new row into contents.
+unrecognized token: "'" in INSERT INTO t (frid,contents) VALUES (1079,'@ACCREDITAT2,1
+ACCREDITAT6557,612
+ACCREDITAT2,1
+ACCREDITAT6557,612
+]##### Exported from S945 (03/03/2025 15:42:13) #####
+
+   ----- End of S945 conclusion -----') 
