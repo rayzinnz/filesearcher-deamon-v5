@@ -38,23 +38,23 @@ db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\dump'
 [[file_set]]
 name = "rays"
 local_root_path = 'C:\Users\hrag\Sync'
-include_subdirs = false
+include_subdirs = true
 exclude_regex = "standard_file_exclusion"
 db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\rays'
 
 [[file_set]]
 name = "tfs"
 local_root_path = 'C:\Users\hrag\tfs3'
-include_subdirs = false
+include_subdirs = true
 exclude_regex = "standard_file_exclusion"
 db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfs'
 
-[[file_set]]
-name = "tfsnz"
-local_root_path = 'C:\Users\hrag\tfsnz'
-include_subdirs = false
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfsnz'
+# [[file_set]]
+# name = "tfsnz"
+# local_root_path = 'C:\Users\hrag\tfsnz'
+# include_subdirs = true
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfsnz'
 
 # [[file_set]]
 # name = "rays"
