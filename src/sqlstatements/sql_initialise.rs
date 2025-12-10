@@ -65,6 +65,18 @@ rid INTEGER PRIMARY KEY AUTOINCREMENT
 	sqls.push(String::from(r#"CREATE INDEX IF NOT EXISTS idx_f_parent_filename ON f(parent_rid,filename);"#));
 	sqls.push(String::from(r#"CREATE INDEX IF NOT EXISTS idx_f_top_parent_rid ON f(top_parent_rid);"#));
 
+	sqls.push(String::from(r#"
+CREATE TABLE IF NOT EXISTS fdel (
+frid INTEGER
+);
+"#));
+
+	sqls.push(String::from(r#"
+CREATE TABLE IF NOT EXISTS flddel (
+path TEXT
+);
+"#));
+
 return  sqls;
 }
 
