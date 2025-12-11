@@ -1,6 +1,9 @@
+use async_walkdir::WalkDir;
 use chrono::{DateTime, Local, Utc};
 use crc_fast::{checksum_file, CrcAlgorithm::Crc64Nvme};
 use extract_text::*;
+use futures_lite::future::block_on;
+use futures_lite::stream::StreamExt;
 use helper_lib::{
 	self,
 	setup_logger,
@@ -16,60 +19,44 @@ use rusqlite::{Connection};
 use std::{
 	cmp::Reverse, collections::{HashMap, HashSet}, error::Error, fs, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread::{self, JoinHandle}
 };
-use walkdir::WalkDir;
-//convert std::time::SystemTime to time::Date
+// use walkdir::WalkDir;
+
 pub mod config;
 use config::FilesSet;
 pub mod sqlstatements;
 use sqlstatements::sql_initialise;
 
-// const STANDARD_FILE_EXCLUSION_PATTERN: &str = r"(?i)([\\/]\.)|([\\/]~)|([\\/]\$)|(__pycache__)|(\.pyc$)|([\\/]build[\\/])|([\\/]target[\\/](debug|release)[\\/])|([\\/]Staging[\\/])|([\\/]node_modules[\\/])|([\\/]edcache[\\/])";
+fn main() {
+	setup_logger(LevelFilter::Info);
 
-// fn setup_files_sets(files_sets: &mut Vec<FilesSet>) {
-// 	let standard_file_exclusion: Regex = Regex::new(STANDARD_FILE_EXCLUSION_PATTERN).unwrap();
+    let keep_going = Arc::new(AtomicBool::new(true));
+    let keep_going_flag = keep_going.clone();
+    let _watch_for_quit_handle = thread::spawn(move || {watch_for_quit(keep_going_flag);});
 
-// 	if cfg!(target_os = "windows") {
-// 		files_sets.push(
-// 			FilesSet {
-// 				name: String::from("test set"),
-// 				local_root_path: PathBuf::from(r"C:\Users\hrag\Sync\Programming\python\FileSearcher\test"),
-// 				include_subdirs: true,
-// 				include_regex: None,
-// 				exclude_regex: Some(standard_file_exclusion.clone()),
-// 				dt_from: None,
-// 				dt_to: None,
-// 				db_dir: PathBuf::from(r"C:\Users\hrag\dbs\FileSearcherDeamon5\test_set"),
-// 			}
-// 		);
-// 		files_sets.push(
-// 			FilesSet {
-// 				name: String::from("dump"),
-// 				local_root_path: PathBuf::from(r"C:\Users\hrag\DUMP"),
-// 				include_subdirs: false,
-// 				include_regex: None,
-// 				exclude_regex: Some(standard_file_exclusion.clone()),
-// 				dt_from: None,
-// 				dt_to: None,
-// 				db_dir: PathBuf::from(r"C:\Users\hrag\dbs\FileSearcherDeamon5\dump"),
-// 			}
-// 		);
-// 	} else if cfg!(target_os = "linux") {
-// 		files_sets.push(
-// 			FilesSet {
-// 				name: String::from("test set"),
-// 				local_root_path: PathBuf::from("/home/ray/MEGA/Rays/Programming/python/file/test_text_extract"),
-// 				include_subdirs: true,
-// 				include_regex: Some(Regex::new(r"(?i).*\.py$").unwrap()),
-// 				exclude_regex: Some(standard_file_exclusion.clone()),
-// 				dt_from: None,
-// 				dt_to: None,
-// 				db_dir: PathBuf::from("/home/ray/FileSearcherDeamon5/test_set"),
-// 			}
-// 		);
-// 	} else {
-// 		panic!("Unsupported OS");
-// 	}
-// }
+	let files_sets:Vec<FilesSet> = config::get_file_sets(None);
+
+	let mut threads_handles: Vec<JoinHandle<()>> = Vec::new();
+	for files_set in files_sets {
+		let keep_going_flag = keep_going.clone();
+		let join_handle = thread::Builder::new()
+			.name(files_set.name.to_string())
+			.spawn(move || {update_fileset(keep_going_flag, files_set);})
+			.expect("Failed to spawn thread");
+		threads_handles.push(join_handle);
+	}
+
+	for thread_handle in threads_handles {
+		if let Err(e) = thread_handle.join() {
+			error!("thread join error: {:?}", e);
+		}
+	}
+
+	keep_going.store(false, Ordering::Relaxed);
+	#[cfg(target_os = "linux")]
+	if let Err(e) = _watch_for_quit_handle.join() {
+		error!("watch_for_quit thread join error: {:?}", e);
+	}
+}
 
 fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 	//create directory
@@ -132,41 +119,6 @@ fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 
 }
 
-fn main() {
-	setup_logger(LevelFilter::Info);
-
-    let keep_going = Arc::new(AtomicBool::new(true));
-    let keep_going_flag = keep_going.clone();
-    let _watch_for_quit_handle = thread::spawn(move || {watch_for_quit(keep_going_flag);});
-
-	// let mut files_sets:Vec<FilesSet> = Vec::new();
-	// setup_files_sets(&mut files_sets);
-
-	let files_sets:Vec<FilesSet> = config::get_file_sets(None);
-
-	let mut threads_handles: Vec<JoinHandle<()>> = Vec::new();
-	for files_set in files_sets {
-		let keep_going_flag = keep_going.clone();
-		let join_handle = thread::Builder::new()
-			.name(files_set.name.to_string())
-			.spawn(move || {update_fileset(keep_going_flag, files_set);})
-			.expect("Failed to spawn thread");
-		threads_handles.push(join_handle);
-	}
-
-	for thread_handle in threads_handles {
-		if let Err(e) = thread_handle.join() {
-			error!("thread join error: {:?}", e);
-		}
-	}
-
-	keep_going.store(false, Ordering::Relaxed);
-	#[cfg(target_os = "linux")]
-	if let Err(e) = _watch_for_quit_handle.join() {
-		error!("watch_for_quit thread join error: {:?}", e);
-	}
-}
-
 #[derive(Debug)]
 struct FileToScan {
 	path: PathBuf,
@@ -174,39 +126,24 @@ struct FileToScan {
 	size: u64,
 }
 
-fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
-	// println!("{:?}", files_set);
-
-	if let Err(e) = initalise_database(&files_set) {
-		keep_going.store(false, Ordering::Relaxed);
-		panic!("Error initialising main db: {}", e)
-	}
-
-	let mut db_path_main = files_set.db_dir.clone();
-	db_path_main.push(sqlstatements::MAIN_DB);
-	let mut db_path_metadata = files_set.db_dir.clone();
-	db_path_metadata.push(sqlstatements::METADATA_DB);
-	let mut db_path_contents = files_set.db_dir.clone();
-	db_path_contents.push(sqlstatements::CONTENT_DB);
-
+fn get_file_listing(keep_going: Arc<AtomicBool>, files_set: &FilesSet) -> Vec<FileToScan> {
     info!("{}: Starting to traverse directory: {:?}", files_set.name, files_set.local_root_path);
 	//let p = PathBuf::new();
 	//p.metadata()?.modified()
 
-	//first build a list of files, then process them in order of modified date desc.
 	let mut files_to_scan:Vec<FileToScan> = Vec::new();
-	let mut max_folder_depth:usize = std::usize::MAX;
-	if !files_set.include_subdirs {
-		max_folder_depth = 1;
-	}
+	// let mut max_folder_depth:usize = std::usize::MAX;
+	// if !files_set.include_subdirs {
+	// 	max_folder_depth = 1;
+	// }
 	let include_regex: Option<Regex>;
-	if let Some(include_regex_str) = files_set.include_regex {
+	if let Some(include_regex_str) = files_set.include_regex.clone() {
 		include_regex = Some(Regex::new(&include_regex_str).unwrap());
 	} else {
 		include_regex = None
 	}
 	let exclude_regex: Option<Regex>;
-	if let Some(exclude_regex_str) = files_set.exclude_regex {
+	if let Some(exclude_regex_str) = files_set.exclude_regex.clone() {
 		exclude_regex = Some(Regex::new(&exclude_regex_str).unwrap());
 	} else {
 		exclude_regex = None
@@ -225,75 +162,199 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 	}
 	// println!("max_folder_depth: {}", max_folder_depth);
 	let mut file_count:usize = 0;
-	for entry in WalkDir::new(&files_set.local_root_path)
-		.max_depth(max_folder_depth)
-		.into_iter()
-		.filter_map(|e| e.ok()) // Skip errors
-	{
-		let path = entry.path();
 
-		// info!("{} files scanned, {} files included", files_set.name, files_set.local_root_path);
-		
-        // Process only files (not directories)
-		if path.is_file() {
-			file_count += 1;
-			trace!("{:?}", path);
-			if file_count % 10000 == 0 {
-				info!("{}: scanned {} files", files_set.name, file_count);
-			}
-			match path.metadata() {
-				Ok(path_metadata) => {
-					match path_metadata.modified() {
-						Ok(file_mtime) => {
-							let filetimelocal: DateTime<Local> = file_mtime.into();
-							let mut include_file = true;
-							if let Some(dt_from) = dt_from {
-								if filetimelocal <= dt_from {
-									include_file = false;
-								}
-							}
-							if include_file && let Some(dt_to) = dt_to {
-								if filetimelocal >= dt_to {
-									include_file = false;
-								}
-							}
-							if include_file && let Some(include_regex) = &include_regex {
-								if !include_regex.is_match(&path.to_string_lossy()) {
-									include_file = false;
-								}
-							}
-							if include_file && let Some(exclude_regex) = &exclude_regex {
-								if exclude_regex.is_match(&path.to_string_lossy()) {
-									include_file = false;
-								}
-							}
-							if include_file {
-								files_to_scan.push(
-									FileToScan {
-										path: path.to_path_buf(),
-										mdate: filetimelocal,
-										size: path_metadata.len(),
+	if files_set.include_subdirs {
+		block_on(async {
+			let mut entries  = WalkDir::new(files_set.local_root_path.clone());
+			loop {
+				match entries.next().await {
+					Some(Ok(entry)) => {
+						let path = entry.path();
+						// println!("{}", path.to_string_lossy());
+						file_count += 1;
+						// println!("{} {}", file_count, path.to_string_lossy());
+						// info!("{} files scanned, {} files included", files_set.name, files_set.local_root_path);
+						if file_count % 10000 == 0 {
+							info!("{}: scanned {} files", files_set.name, file_count);
+						}
+						match entry.metadata().await {
+							Ok(path_metadata) => {
+								if path_metadata.is_file() {
+									match path_metadata.modified() {
+										Ok(file_mtime) => {
+											let filetimelocal: DateTime<Local> = file_mtime.into();
+											let mut include_file = true;
+											if let Some(dt_from) = dt_from {
+												if filetimelocal <= dt_from {
+													include_file = false;
+												}
+											}
+											if include_file && let Some(dt_to) = dt_to {
+												if filetimelocal >= dt_to {
+													include_file = false;
+												}
+											}
+											if include_file && let Some(include_regex) = &include_regex {
+												if !include_regex.is_match(&path.to_string_lossy()) {
+													include_file = false;
+												}
+											}
+											if include_file && let Some(exclude_regex) = &exclude_regex {
+												if exclude_regex.is_match(&path.to_string_lossy()) {
+													include_file = false;
+												}
+											}
+											if include_file {
+												files_to_scan.push(
+													FileToScan {
+														path: path.to_path_buf(),
+														mdate: filetimelocal,
+														size: path_metadata.len(),
+													}
+												);
+											}
+										}
+										Err(e) => {
+											keep_going.store(false, Ordering::Relaxed);
+											panic!("Error getting file modified time: {:?}", e);
+										}
 									}
-								);
+								
+								}
+							}
+							Err(e) => {
+								keep_going.store(false, Ordering::Relaxed);
+								panic!("Could not get file metadata: {}", e);
 							}
 						}
-						Err(e) => {
-							keep_going.store(false, Ordering::Relaxed);
-							panic!("Error getting file modified time: {:?}", e);
+
+						if !keep_going.load(Ordering::Relaxed) {
+							break;
 						}
+
+					},
+					Some(Err(e)) => {
+						error!("error: {}", e);
+						break;
 					}
-				}
-				Err(e) => {
-					keep_going.store(false, Ordering::Relaxed);
-					panic!("Could not get file metadata: {}", e);
+					None => break,
 				}
 			}
-		}
+		});
+	} else {
+		let runtime = tokio::runtime::Runtime::new().expect("Error starting tokio::runtime");
+		runtime.block_on( async {
+			let mut entries = tokio::fs::read_dir(files_set.local_root_path.clone()).await.expect("Error with tokio::fs::read_dir");
+			// while let Some(entry) = entries.next_entry().await.unwrap() {
+			// 	let path = entry.path();
+			// 	let path_metadata = entry.metadata().await.unwrap();
+			// 	// println!("{}", path.to_string_lossy());
+			// 	if path_metadata.is_file() {
+			// 		// println!("{}", path.to_string_lossy());
+			// 		files.push(path);
+			// 	}
+			// }
 
-		if !keep_going.load(Ordering::Relaxed) {
-			break;
-		}
-    }
+			loop {
+				match entries.next_entry().await {
+					Ok(Some(entry)) => {
+						let path = entry.path();
+						// println!("{}", path.to_string_lossy());
+						file_count += 1;
+						// println!("{} {}", file_count, path.to_string_lossy());
+						// info!("{} files scanned, {} files included", files_set.name, files_set.local_root_path);
+						if file_count % 10000 == 0 {
+							info!("{}: scanned {} files", files_set.name, file_count);
+						}
+						match entry.metadata().await {
+							Ok(path_metadata) => {
+								if path_metadata.is_file() {
+									match path_metadata.modified() {
+										Ok(file_mtime) => {
+											let filetimelocal: DateTime<Local> = file_mtime.into();
+											let mut include_file = true;
+											if let Some(dt_from) = dt_from {
+												if filetimelocal <= dt_from {
+													include_file = false;
+												}
+											}
+											if include_file && let Some(dt_to) = dt_to {
+												if filetimelocal >= dt_to {
+													include_file = false;
+												}
+											}
+											if include_file && let Some(include_regex) = &include_regex {
+												if !include_regex.is_match(&path.to_string_lossy()) {
+													include_file = false;
+												}
+											}
+											if include_file && let Some(exclude_regex) = &exclude_regex {
+												if exclude_regex.is_match(&path.to_string_lossy()) {
+													include_file = false;
+												}
+											}
+											if include_file {
+												files_to_scan.push(
+													FileToScan {
+														path: path.to_path_buf(),
+														mdate: filetimelocal,
+														size: path_metadata.len(),
+													}
+												);
+											}
+										}
+										Err(e) => {
+											keep_going.store(false, Ordering::Relaxed);
+											panic!("Error getting file modified time: {:?}", e);
+										}
+									}
+								
+								}
+							}
+							Err(e) => {
+								keep_going.store(false, Ordering::Relaxed);
+								panic!("Could not get file metadata: {}", e);
+							}
+						}
+
+						if !keep_going.load(Ordering::Relaxed) {
+							break;
+						}
+
+					},
+					Err(e) => {
+						error!("error: {}", e);
+						break;
+					}
+					Ok(None) => break,
+				}
+			}
+		});
+	}
+
+	files_to_scan
+}
+
+fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
+	// println!("{:?}", files_set);
+
+	if let Err(e) = initalise_database(&files_set) {
+		keep_going.store(false, Ordering::Relaxed);
+		panic!("Error initialising main db: {}", e)
+	}
+
+	let mut db_path_main = files_set.db_dir.clone();
+	db_path_main.push(sqlstatements::MAIN_DB);
+	let mut db_path_metadata = files_set.db_dir.clone();
+	db_path_metadata.push(sqlstatements::METADATA_DB);
+	let mut db_path_contents = files_set.db_dir.clone();
+	db_path_contents.push(sqlstatements::CONTENT_DB);
+
+	//first build a list of files, then process them in order of modified date desc.
+	let keep_going_flag = keep_going.clone();
+	let mut files_to_scan = get_file_listing(keep_going_flag, &files_set);
+
+	// return;
 
 	//sort by file date desc
 	files_to_scan.sort_unstable_by_key(|f| Reverse(f.mdate));
@@ -626,67 +687,78 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 		}
 	}
 
-	//remove existing files from fdel
-	{
-		let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
-		let tx = conn.transaction().expect("could not start transaction");
-		for sql in fdel_statements {
-			tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
+	if !keep_going.load(Ordering::Relaxed) {
+		//if this fileset was cutoff early, do not consider any deletions
+		{
+			let conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
+			let sql = "DELETE FROM fdel;";
+			conn.execute_batch(sql).expect("Error deleting from fdel");
+			let sql = "DELETE FROM flddel;";
+			conn.execute_batch(sql).expect("Error deleting from flddel");
 		}
-		tx.commit().expect("transaction commit failed");
-	}
-	//check files are actually deleted, instead of just being excluded from scanning
-	let mut removed_dirs: HashSet<String> = HashSet::new();
-	let sql = "SELECT f.rid, f.path, f.filename FROM fdel JOIN f ON f.rid=fdel.frid";
-	match query_to_tuples::<(i64, String, String)>(&db_path_metadata, &sql) {
-		Ok(rows) => {
-			// println!("rows:\n{:#?}", rows);
+	} else {
+		//remove existing files from fdel
+		{
 			let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
 			let tx = conn.transaction().expect("could not start transaction");
-			for row in rows.iter() {
-				let frid = row.0;
-				let path = row.1.to_string();
-				if removed_dirs.contains(&path) {
-					continue;
-				}
-				let filename = row.2.to_string();
-				let dirpath = files_set.local_root_path.join(&path);
-				if !dirpath.exists() {
-					removed_dirs.insert(path.clone());
-					let sql = format!("INSERT INTO flddel (path) VALUES ({})", dbfmt_t(&path));
-					tx.execute_batch(&sql).expect(&format!("error inserting into fdel table, {}\n", sql));
-				} else {
-					let fullpath = dirpath.join(&filename);
-					if fullpath.exists() {
-						let sql = format!("DELETE FROM fdel WHERE frid = {frid}", );
-						tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
-					}
-				}
+			for sql in fdel_statements {
+				tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
 			}
 			tx.commit().expect("transaction commit failed");
 		}
-		Err(e) => {
-			keep_going.store(false, Ordering::Relaxed);
-			panic!("Error fetching pre scanned items: {}", e);
+		//check files are actually deleted, instead of just being excluded from scanning
+		let mut removed_dirs: HashSet<String> = HashSet::new();
+		let sql = "SELECT f.rid, f.path, f.filename FROM fdel JOIN f ON f.rid=fdel.frid";
+		match query_to_tuples::<(i64, String, String)>(&db_path_metadata, &sql) {
+			Ok(rows) => {
+				// println!("rows:\n{:#?}", rows);
+				let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
+				let tx = conn.transaction().expect("could not start transaction");
+				for row in rows.iter() {
+					let frid = row.0;
+					let path = row.1.to_string();
+					if removed_dirs.contains(&path) {
+						continue;
+					}
+					let filename = row.2.to_string();
+					let dirpath = files_set.local_root_path.join(&path);
+					if !dirpath.exists() {
+						removed_dirs.insert(path.clone());
+						let sql = format!("INSERT INTO flddel (path) VALUES ({})", dbfmt_t(&path));
+						tx.execute_batch(&sql).expect(&format!("error inserting into fdel table, {}\n", sql));
+					} else {
+						let fullpath = dirpath.join(&filename);
+						if fullpath.exists() {
+							let sql = format!("DELETE FROM fdel WHERE frid = {frid}", );
+							tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
+						}
+					}
+				}
+				tx.commit().expect("transaction commit failed");
+			}
+			Err(e) => {
+				keep_going.store(false, Ordering::Relaxed);
+				panic!("Error fetching pre scanned items: {}", e);
+			}
 		}
-	}
-	//now just delete from dbs table
-	{
-		let conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
-		//contents
-		conn.execute_batch(&format!("ATTACH DATABASE '{}' AS content;", &db_path_contents.to_string_lossy())).expect("error attaching content db");
-		let sql = "DELETE FROM content.t AS t WHERE t.frid IN (SELECT frid FROM fdel)";
-		conn.execute_batch(sql).expect("error deleting from content db");
-		conn.execute_batch("DETACH DATABASE content;").expect("error detaching content db");
-		//main
-		conn.execute_batch(&format!("ATTACH DATABASE '{}' AS maindb;", &db_path_main.to_string_lossy())).expect("error attaching main db");
-		let sql = "DELETE FROM maindb.fsearch AS fs WHERE fs.frid IN (SELECT frid FROM fdel)";
-		conn.execute_batch(sql).expect("error deleting from main db");
-		conn.execute_batch("DETACH DATABASE maindb;").expect("error detaching main db");
-		//meta
-		let sql = "DELETE FROM f WHERE f.rid IN (SELECT frid FROM fdel)";
-		let rows_deleted = conn.execute(sql, []).expect("error deleting from meta db");
-		info!("{} file item rows deleted", rows_deleted);
+		//now just delete from dbs table
+		{
+			let conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
+			//contents
+			conn.execute_batch(&format!("ATTACH DATABASE '{}' AS content;", &db_path_contents.to_string_lossy())).expect("error attaching content db");
+			let sql = "DELETE FROM content.t AS t WHERE t.frid IN (SELECT frid FROM fdel)";
+			conn.execute_batch(sql).expect("error deleting from content db");
+			conn.execute_batch("DETACH DATABASE content;").expect("error detaching content db");
+			//main
+			conn.execute_batch(&format!("ATTACH DATABASE '{}' AS maindb;", &db_path_main.to_string_lossy())).expect("error attaching main db");
+			let sql = "DELETE FROM maindb.fsearch AS fs WHERE fs.frid IN (SELECT frid FROM fdel)";
+			conn.execute_batch(sql).expect("error deleting from main db");
+			conn.execute_batch("DETACH DATABASE maindb;").expect("error detaching main db");
+			//meta
+			let sql = "DELETE FROM f WHERE f.rid IN (SELECT frid FROM fdel)";
+			let rows_deleted = conn.execute(sql, []).expect("error deleting from meta db");
+			info!("{}: {} file item rows deleted", files_set.name, rows_deleted);
+		}
 	}
 
 	info!("{}: END of files_set: {:?}", files_set.name, files_set.name);
