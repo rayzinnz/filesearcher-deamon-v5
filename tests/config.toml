@@ -57,6 +57,30 @@ db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set'
 # db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfsnz'
 
 # [[file_set]]
+# name = "Elims PRD Data"
+# local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
+# include_subdirs = true
+# include_regex = '(?i)\.(log|eml|csv|XML|txt|dat|collected|DBF|xlsx|zip|RES)$'
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd'
+
+# [[file_set]]
+# name = "eLIMS.NET Logs JobScheduler"
+# local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
+# include_subdirs = true
+# include_regex = '(?i)\.(log|zip)$'
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsNetLogsSched'
+
+# [[file_set]]
+# name = "OSO-Planning logs"
+# local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
+# include_subdirs = true
+# include_regex = '(?i)\.(log)$'
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\OSOPlanningLogs'
+
+# [[file_set]]
 # name = "rays"
 # local_root_path = '/home/ray/MEGA/Rays'
 # include_subdirs = true
