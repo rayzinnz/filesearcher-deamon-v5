@@ -21,64 +21,64 @@ include_subdirs = true
 exclude_regex = "standard_file_exclusion"
 db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set'
 
-[[file_set]]
-name = "test_set2"
-local_root_path = 'C:\Users\hrag\Sync\Programming\rust\rust-extract-text\tests\resources\files_to_scan'
-include_subdirs = true
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set2'
+# [[file_set]]
+# name = "test_set2"
+# local_root_path = 'C:\Users\hrag\Sync\Programming\rust\rust-extract-text\tests\resources\files_to_scan'
+# include_subdirs = true
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\test_set2'
 
-[[file_set]]
-name = "dump"
-local_root_path = 'C:\Users\hrag\DUMP'
-include_subdirs = false
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\dump'
+# [[file_set]]
+# name = "dump"
+# local_root_path = 'C:\Users\hrag\DUMP'
+# include_subdirs = false
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\dump'
 
-[[file_set]]
-name = "rays"
-local_root_path = 'C:\Users\hrag\Sync'
-include_subdirs = true
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\rays'
+# [[file_set]]
+# name = "rays"
+# local_root_path = 'C:\Users\hrag\Sync'
+# include_subdirs = true
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\rays'
 
-[[file_set]]
-name = "tfs"
-local_root_path = 'C:\Users\hrag\tfs3'
-include_subdirs = true
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfs'
+# [[file_set]]
+# name = "tfs"
+# local_root_path = 'C:\Users\hrag\tfs3'
+# include_subdirs = true
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfs'
 
-[[file_set]]
-name = "tfsnz"
-local_root_path = 'C:\Users\hrag\tfsnz'
-include_subdirs = true
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfsnz'
+# [[file_set]]
+# name = "tfsnz"
+# local_root_path = 'C:\Users\hrag\tfsnz'
+# include_subdirs = true
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\tfsnz'
 
-[[file_set]]
-name = "Elims PRD Data"
-local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
-include_subdirs = true
-include_regex = '(?i)\.(log|eml|csv|XML|txt|dat|collected|DBF|xlsx|zip|RES)$'
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd'
+# [[file_set]]
+# name = "Elims PRD Data"
+# local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
+# include_subdirs = true
+# include_regex = '(?i)\.(log|eml|csv|XML|txt|dat|collected|DBF|xlsx|zip|RES)$'
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd'
 
-[[file_set]]
-name = "eLIMS.NET Logs JobScheduler"
-local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
-include_subdirs = true
-include_regex = '(?i)\.(log|zip)$'
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsNetLogsSched'
+# [[file_set]]
+# name = "eLIMS.NET Logs JobScheduler"
+# local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
+# include_subdirs = true
+# include_regex = '(?i)\.(log|zip)$'
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsNetLogsSched'
 
-[[file_set]]
-name = "OSO-Planning logs"
-local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
-include_subdirs = true
-include_regex = '(?i)\.(log)$'
-exclude_regex = "standard_file_exclusion"
-db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\OSOPlanningLogs'
+# [[file_set]]
+# name = "OSO-Planning logs"
+# local_root_path = '\\XXPA001APVP731\itaag016_elimsfgs\Data\PRD'
+# include_subdirs = true
+# include_regex = '(?i)\.(log)$'
+# exclude_regex = "standard_file_exclusion"
+# db_dir = 'C:\Users\hrag\dbs\FileSearcherDeamon5\OSOPlanningLogs'
 
 # [[file_set]]
 # name = "rays"

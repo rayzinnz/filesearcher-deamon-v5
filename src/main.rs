@@ -394,17 +394,23 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
 			let relative_path = path_to_agnostic_relative(&file_to_scan.path.parent().unwrap(), &files_set.local_root_path);
 			// println!("relative_path {}", relative_path);
-			let parent_crc: i64 = checksum_file(Crc64Nvme, &file_to_scan.path.to_string_lossy(), None).unwrap() as i64;
 			//fill up pre-scanned files. Need filename, parent_files, crc
 			let mut pre_scanned_items: Vec<FileListItem> = Vec::new();
 			//get top_parent_rid
-			let sql = format!("SELECT rid, crc FROM f WHERE filename = {} AND path = {} AND depth=0", dbfmt_t(&parent_filename), dbfmt_t(&relative_path));
-			match query_single_row_to_tuple::<(i64, i64)>(&db_path_metadata, &sql) {
+			let sql = format!("SELECT rid, crc, size, time FROM f WHERE filename = {} AND path = {} AND depth=0", dbfmt_t(&parent_filename), dbfmt_t(&relative_path));
+			match query_single_row_to_tuple::<(i64, i64, i64, i64)>(&db_path_metadata, &sql) {
 				Ok(top_parent_row) => {
 					if top_parent_row.is_some() {
 						let top_parent_rid = top_parent_row.unwrap().0;
 						fdel_statements.push(format!("DELETE FROM fdel WHERE frid IN (SELECT rid FROM f WHERE top_parent_rid = {});", top_parent_rid));
+						let top_parent_size: u64 = top_parent_row.unwrap().2 as u64;
+						let top_parent_time = top_parent_row.unwrap().3;
+						if top_parent_size==file_to_scan.size && top_parent_time==filetimeunix {
+							trace!("{}: size and mdate match, so skip.", files_set.name);
+							continue;
+						}
 						let top_parent_crc = top_parent_row.unwrap().1;
+						let parent_crc: i64 = checksum_file(Crc64Nvme, &file_to_scan.path.to_string_lossy(), None).unwrap() as i64;
 						if top_parent_crc==parent_crc {
 							trace!("{}: CRC match, so skip.", files_set.name);
 							continue;
