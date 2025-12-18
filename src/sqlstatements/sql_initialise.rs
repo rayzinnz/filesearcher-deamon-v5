@@ -71,6 +71,8 @@ frid INTEGER
 );
 "#));
 
+	sqls.push(String::from(r#"CREATE INDEX IF NOT EXISTS idx_fdel_frid ON fdel(frid);"#));
+
 	sqls.push(String::from(r#"
 CREATE TABLE IF NOT EXISTS flddel (
 path TEXT
