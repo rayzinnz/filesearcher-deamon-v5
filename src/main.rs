@@ -72,6 +72,15 @@ fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 	//check version (if any)
 	let cur_db_ver = query_to_i64(&db_path_main, "SELECT setting_value FROM settings WHERE setting_name = 'db_ver';").unwrap_or(Some(0)).unwrap_or(0);
 
+	//run settings inserts
+	{
+		let conn = Connection::open(&db_path_main)?;
+		let sqls = sql_initialise::insert_settings(&files_set);
+		for sql in sqls {
+			conn.execute_batch(&sql)?;
+		}
+	}
+
 	//delete if different version, otherwise ignore
 	if cur_db_ver as i32 != sqlstatements::DB_VER {
 		info!("Current db version: {}, need to upgrade to version {}", cur_db_ver, sqlstatements::DB_VER);
@@ -92,11 +101,7 @@ fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 			let conn = Connection::open(&db_path_main)?;
 			let sqls = sql_initialise::main_db();
 			for sql in sqls {
-				let _changes = conn.execute_batch(&sql)?;
-			}
-			let sqls = sql_initialise::insert_settings(&files_set.local_root_path.to_string_lossy());
-			for sql in sqls {
-				let _changes = conn.execute_batch(&sql)?;
+				conn.execute_batch(&sql)?;
 			}
 		}
 		{
@@ -706,18 +711,22 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 		//remove existing files from fdel
 		{
 			let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
+			info!("{}: start of {} fdel_statements", files_set.name, fdel_statements.len());
 			let tx = conn.transaction().expect("could not start transaction");
 			for sql in fdel_statements {
 				tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
 			}
+			info!("{}: commit of fdel_statements", files_set.name);
 			tx.commit().expect("transaction commit failed");
+			info!("{}: end of fdel_statements", files_set.name);
 		}
 		//check files are actually deleted, instead of just being excluded from scanning
 		let mut removed_dirs: HashSet<String> = HashSet::new();
 		let sql = "SELECT f.rid, f.path, f.filename FROM fdel JOIN f ON f.rid=fdel.frid";
 		match query_to_tuples::<(i64, String, String)>(&db_path_metadata, &sql) {
 			Ok(rows) => {
-				// println!("rows:\n{:#?}", rows);
+				//trace!("fdel rows:\n{:#?}", rows);
+				info!("{}: fdel row count: {}", files_set.name, rows.len());
 				let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
 				let tx = conn.transaction().expect("could not start transaction");
 				for row in rows.iter() {

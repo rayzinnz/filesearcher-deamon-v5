@@ -2,7 +2,7 @@
 // <=3 - initial design and development
 // x = initial release
 
-use crate::sqlstatements::DB_VER;
+use crate::{config::FilesSet, sqlstatements::DB_VER};
 
 
 pub fn main_db() -> Vec<String> {
@@ -35,13 +35,20 @@ frid INT
 	return  sqls;
 }
 
-pub fn insert_settings(root_path: &str) -> Vec<String> {
+pub fn insert_settings(files_set: &FilesSet) -> Vec<String> {
 	let mut sqls:Vec<String> = Vec::new();
-	sqls.push(String::from(format!(r#"
-INSERT INTO settings (setting_name,setting_value) VALUES ('root_path','{}');
-"#, root_path.replace("'", "''"))));
 
-	return sqls;
+	sqls.push(String::from(format!(r#"
+INSERT INTO settings (setting_name,setting_value) SELECT 'name','{}'
+WHERE NOT EXISTS (SELECT 1 FROM settings s2 WHERE s2.setting_name = 'name')
+"#, files_set.name.replace("'", "''"))));
+
+	sqls.push(String::from(format!(r#"
+INSERT INTO settings (setting_name,setting_value) SELECT 'root_path','{}'
+WHERE NOT EXISTS (SELECT 1 FROM settings s2 WHERE s2.setting_name = 'root_path')
+"#, files_set.local_root_path.to_string_lossy().replace("'", "''"))));
+
+return sqls;
 }
 
 pub fn metadata_db() -> Vec<String> {
@@ -70,6 +77,8 @@ CREATE TABLE IF NOT EXISTS fdel (
 frid INTEGER
 );
 "#));
+
+	sqls.push(String::from(r#"CREATE INDEX IF NOT EXISTS idx_fdel_frid ON fdel(frid);"#));
 
 	sqls.push(String::from(r#"
 CREATE TABLE IF NOT EXISTS flddel (
