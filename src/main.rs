@@ -72,15 +72,6 @@ fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 	//check version (if any)
 	let cur_db_ver = query_to_i64(&db_path_main, "SELECT setting_value FROM settings WHERE setting_name = 'db_ver';").unwrap_or(Some(0)).unwrap_or(0);
 
-	//run settings inserts
-	{
-		let conn = Connection::open(&db_path_main)?;
-		let sqls = sql_initialise::insert_settings(&files_set);
-		for sql in sqls {
-			conn.execute_batch(&sql)?;
-		}
-	}
-
 	//delete if different version, otherwise ignore
 	if cur_db_ver as i32 != sqlstatements::DB_VER {
 		info!("Current db version: {}, need to upgrade to version {}", cur_db_ver, sqlstatements::DB_VER);
@@ -117,6 +108,15 @@ fn initalise_database(files_set: &FilesSet) -> Result<(), Box<dyn Error>> {
 			for sql in sqls {
 				let _changes = conn.execute_batch(&sql)?;
 			}
+		}
+	}
+
+	//run settings inserts
+	{
+		let conn = Connection::open(&db_path_main)?;
+		let sqls = sql_initialise::insert_settings(&files_set);
+		for sql in sqls {
+			conn.execute_batch(&sql)?;
 		}
 	}
 
