@@ -380,323 +380,337 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 		conn.execute_batch(sql).expect("Error inserting frid to temp table fdel");
 	}
 	let mut fdel_statements:Vec<String> = Vec::new();
-	//ALSO note any directories no longer present
-	for (ifile, file_to_scan) in files_to_scan.iter().enumerate() {
-		//if the drive or network path have disconnected, then exit now.
-		if !files_set.local_root_path.exists() {
-			error!("Error accessing path {:?}. Exiting early.", files_set.local_root_path);
-			break;
-		}
-		if file_to_scan.path.exists() {
-			let filetimeutc: DateTime<Utc> = file_to_scan.mdate.into();
-			let filetimelocal: DateTime<Local> = file_to_scan.mdate.into();
-			//let filetimeunix: i64 = file_to_scan.mdate.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64; //i64 not u64 so this can go into sqlite
-			let filetimeunix: i64 = filetimeutc.timestamp();
-			trace!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
-			if (ifile+1) % 10000 ==0 {
-				info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+	let runtime = tokio::runtime::Runtime::new().expect("Error starting tokio::runtime");
+	runtime.block_on( async {
+		for (ifile, file_to_scan) in files_to_scan.iter().enumerate() {
+			if !keep_going.load(Ordering::Relaxed) {
+				break;
 			}
-			let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
-			let relative_path = path_to_agnostic_relative(&file_to_scan.path.parent().unwrap(), &files_set.local_root_path);
-			// println!("relative_path {}", relative_path);
-			//fill up pre-scanned files. Need filename, parent_files, crc
-			let mut pre_scanned_items: Vec<FileListItem> = Vec::new();
-			//get top_parent_rid
-			let sql = format!("SELECT rid, crc, size, time FROM f WHERE filename = {} AND path = {} AND depth=0", dbfmt_t(&parent_filename), dbfmt_t(&relative_path));
-			match query_single_row_to_tuple::<(i64, i64, i64, i64)>(&db_path_metadata, &sql) {
-				Ok(top_parent_row) => {
-					if top_parent_row.is_some() {
-						let top_parent_rid = top_parent_row.unwrap().0;
-						fdel_statements.push(format!("DELETE FROM fdel WHERE frid IN (SELECT rid FROM f WHERE top_parent_rid = {});", top_parent_rid));
-						let top_parent_size: u64 = top_parent_row.unwrap().2 as u64;
-						let top_parent_time = top_parent_row.unwrap().3;
-						if top_parent_size==file_to_scan.size && top_parent_time==filetimeunix {
-							trace!("{}: size and mdate match, so skip.", files_set.name);
-							continue;
-						}
-						let top_parent_crc = top_parent_row.unwrap().1;
-						let parent_crc: i64 = checksum_file(Crc64Nvme, &file_to_scan.path.to_string_lossy(), None).unwrap() as i64;
-						if top_parent_crc==parent_crc {
-							trace!("{}: CRC match, so skip.", files_set.name);
-							continue;
+			// if file_to_scan.path.exists() {
+			if tokio::fs::try_exists(&file_to_scan.path).await.unwrap_or_default() {
+				let filetimeutc: DateTime<Utc> = file_to_scan.mdate.into();
+				let filetimelocal: DateTime<Local> = file_to_scan.mdate.into();
+				//let filetimeunix: i64 = file_to_scan.mdate.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64; //i64 not u64 so this can go into sqlite
+				let filetimeunix: i64 = filetimeutc.timestamp();
+				trace!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+				if (ifile+1) % 10000 ==0 {
+					info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+				}
+				let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
+				let relative_path = path_to_agnostic_relative(&file_to_scan.path.parent().unwrap(), &files_set.local_root_path);
+				// println!("relative_path {}", relative_path);
+				//fill up pre-scanned files. Need filename, parent_files, crc
+				let mut pre_scanned_items: Vec<FileListItem> = Vec::new();
+				//get top_parent_rid
+				let sql = format!("SELECT rid, crc, size, time FROM f WHERE filename = {} AND path = {} AND depth=0", dbfmt_t(&parent_filename), dbfmt_t(&relative_path));
+				match query_single_row_to_tuple::<(i64, i64, i64, i64)>(&db_path_metadata, &sql) {
+					Ok(top_parent_row) => {
+						if top_parent_row.is_some() {
+							let top_parent_rid = top_parent_row.unwrap().0;
+							fdel_statements.push(format!("DELETE FROM fdel WHERE frid IN (SELECT rid FROM f WHERE top_parent_rid = {});", top_parent_rid));
+							let top_parent_size: u64 = top_parent_row.unwrap().2 as u64;
+							let top_parent_time = top_parent_row.unwrap().3;
+							if top_parent_size==file_to_scan.size && top_parent_time==filetimeunix {
+								trace!("{}: size and mdate match, so skip.", files_set.name);
+								continue;
+							}
+							let top_parent_crc = top_parent_row.unwrap().1;
+							let parent_crc: i64 = checksum_file(Crc64Nvme, &file_to_scan.path.to_string_lossy(), None).unwrap() as i64;
+							if top_parent_crc==parent_crc {
+								trace!("{}: CRC match, so skip.", files_set.name);
+								continue;
+							} else {
+								info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+							}
+							let sql = format!("SELECT rid, filename, depth, parent_rid, crc FROM f WHERE top_parent_rid = {} ORDER BY rid", top_parent_rid);
+							match query_to_tuples::<(i64, String, i64, Option<i64>, i64)>(&db_path_metadata, &sql) {
+								Ok(rows) => {
+									// println!("rows:\n{:#?}", rows);
+									for row in rows.iter() {
+										let filename = row.1.to_string();
+										let mut parent_rid = row.3;
+										let crc = row.4;
+										let mut parent_files: Vec<String> = Vec::new();
+										//build up parent files
+										while parent_rid.is_some() {
+											for row2 in rows.iter() {
+												let rid2 = row2.0;
+												if rid2==parent_rid.unwrap() {
+													let filename2 = row2.1.to_string();
+													parent_rid = row2.3;
+													parent_files.push(filename2);
+													break;
+												}
+											}
+										}
+										parent_files.reverse();
+										pre_scanned_items.push(FileListItem { filename: filename, parent_files: parent_files, crc: crc, size: -1, text_contents: None });
+									}
+								}
+								Err(e) => {
+									keep_going.store(false, Ordering::Relaxed);
+									panic!("Error fetching pre scanned items: {}", e);
+								}
+							}
 						} else {
 							info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 						}
-						let sql = format!("SELECT rid, filename, depth, parent_rid, crc FROM f WHERE top_parent_rid = {} ORDER BY rid", top_parent_rid);
-						match query_to_tuples::<(i64, String, i64, Option<i64>, i64)>(&db_path_metadata, &sql) {
-							Ok(rows) => {
-								// println!("rows:\n{:#?}", rows);
-								for row in rows.iter() {
-									let filename = row.1.to_string();
-									let mut parent_rid = row.3;
-									let crc = row.4;
-									let mut parent_files: Vec<String> = Vec::new();
-									//build up parent files
-									while parent_rid.is_some() {
-										for row2 in rows.iter() {
-											let rid2 = row2.0;
-											if rid2==parent_rid.unwrap() {
-												let filename2 = row2.1.to_string();
-												parent_rid = row2.3;
-												parent_files.push(filename2);
-												break;
-											}
-										}
-									}
-									parent_files.reverse();
-									pre_scanned_items.push(FileListItem { filename: filename, parent_files: parent_files, crc: crc, size: -1, text_contents: None });
-								}
-							}
-							Err(e) => {
-								keep_going.store(false, Ordering::Relaxed);
-								panic!("Error fetching pre scanned items: {}", e);
-							}
+					}
+					Err(e) => {
+						keep_going.store(false, Ordering::Relaxed);
+						panic!("Error fetching top_parent_rid: {}", e);
+					}
+				}
+				// println!("pre_scanned_items:\n{:#?}", pre_scanned_items);
+				let keep_going_flag = keep_going.clone();
+				match extract_text_from_file(file_to_scan.path.as_path(), pre_scanned_items, keep_going_flag) {
+					Ok(contents) => {
+						// println!("{:#?}", contents);
+						//always at least one file, even if empty
+						if contents.is_empty() {
+							keep_going.store(false, Ordering::Relaxed);
+							panic!("Unexpected empty Vec<FileListItem> from extract_text_from_file()");
 						}
-					} else {
-						info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
-					}
-				}
-				Err(e) => {
-					keep_going.store(false, Ordering::Relaxed);
-					panic!("Error fetching top_parent_rid: {}", e);
-				}
-			}
-			// println!("pre_scanned_items:\n{:#?}", pre_scanned_items);
-			let keep_going_flag = keep_going.clone();
-			match extract_text_from_file(file_to_scan.path.as_path(), pre_scanned_items, keep_going_flag) {
-				Ok(contents) => {
-					// println!("{:#?}", contents);
-					//always at least one file, even if empty
-					if contents.is_empty() {
-						keep_going.store(false, Ordering::Relaxed);
-						panic!("Unexpected empty Vec<FileListItem> from extract_text_from_file()");
-					}
-					//first item is always parent, with 0 parent files
-					let parent_item = &contents[0];
-					if !parent_item.parent_files.is_empty() {
-						keep_going.store(false, Ordering::Relaxed);
-						panic!("Unexpected parent_files in parent item from extract_text_from_file(): {:#?}", parent_item);
-					}
+						//first item is always parent, with 0 parent files
+						let parent_item = &contents[0];
+						if !parent_item.parent_files.is_empty() {
+							keep_going.store(false, Ordering::Relaxed);
+							panic!("Unexpected parent_files in parent item from extract_text_from_file(): {:#?}", parent_item);
+						}
 
-					//build up a heirarchy of links
-					// let mut file_links: Vec<(i64, i64)> = Vec::new(); //links to contents-index and db-rid
-					let mut links:HashMap<Vec<String>, (usize, i64)> = HashMap::new(); //links to contents-index and db-rid
-					for (ic, file_content) in contents.iter().enumerate(){
-						let parent_files = file_content.parent_files.to_vec();
-						if ic>0 && !links.contains_key(&parent_files) {
-							//find parent
-							let mut found_parent_file_content:bool = false;
-							for (ic2, file_content2) in contents.iter().enumerate(){
-								if ic2 >= ic {
-									break;
-								}
-								// println!("file_content2: {:?}", file_content2);
-								// println!("current filename and parent_files: {}, {:?}", file_content.filename, file_content.parent_files);
-								let expected_filename = file_content.parent_files.last().unwrap();
-								let expected_parent_files = &file_content.parent_files[0..file_content.parent_files.len()-1];
-								// println!("expected_filename: {}, comparison_filename: {}", expected_filename, file_content2.filename);
-								// println!("expected_parent_files: {:?}, comparison parent_files {:?}", expected_parent_files, file_content2.parent_files);
-								if file_content2.filename==*expected_filename && file_content2.parent_files == expected_parent_files {
-									links.insert(parent_files.to_vec(), (ic2, -1));
-									// println!("links: {:#?}", links);
-									found_parent_file_content = true;
-								}
-							}
-							if !found_parent_file_content {
-								keep_going.store(false, Ordering::Relaxed);
-								panic!("Parent FileListItem not found for file {:?}", file_to_scan.path)
-							}
-						}
-					}
-					// println!("{:#?}", links);
-					
-					//update db
-					let mut top_parent_rid: i64 = -1;
-					let mut frid: i64;
-					for file_content in contents {
-						// this is in order of adding, so the files in parent files will always exist, and top parent is always first
-						let depth = file_content.parent_files.len();
-						// find parent_rid
-						let mut parent_rid: Option<i64> = None;
-						if depth>0 {
-							let link = links.get(&file_content.parent_files).unwrap();
-							if link.1==-1 {
-								let filename = file_content.parent_files.last().unwrap().to_owned();
-								let relative_path = relative_path.to_owned();
-								let sql = where_sql!("SELECT rid FROM f WHERE {} AND {} AND {}",
-									("filename", dbfmt_comp(Some(filename), CompOp::Eq)),
-									("path", dbfmt_comp(Some(relative_path), CompOp::Eq)),
-									("depth", dbfmt_comp(Some(depth-1), CompOp::Eq))
-								);
-								match query_to_i64(&db_path_metadata, &sql) {
-									Ok(rid) => {
-										if rid.is_none() {
-											keep_going.store(false, Ordering::Relaxed);
-											panic!("Couldn't retrieve parent_rid for\n{}", sql);
-										}
-										parent_rid = rid;
-										links.insert(file_content.parent_files.to_vec(), (link.0, parent_rid.unwrap()));
+						//build up a heirarchy of links
+						// let mut file_links: Vec<(i64, i64)> = Vec::new(); //links to contents-index and db-rid
+						let mut links:HashMap<Vec<String>, (usize, i64)> = HashMap::new(); //links to contents-index and db-rid
+						for (ic, file_content) in contents.iter().enumerate(){
+							let parent_files = file_content.parent_files.to_vec();
+							if ic>0 && !links.contains_key(&parent_files) {
+								//find parent
+								let mut found_parent_file_content:bool = false;
+								for (ic2, file_content2) in contents.iter().enumerate(){
+									if ic2 >= ic {
+										break;
 									}
-									Err(e) => {
-										keep_going.store(false, Ordering::Relaxed);
-										panic!("Error fetching parent_rid: {}", e);
+									// println!("file_content2: {:?}", file_content2);
+									// println!("current filename and parent_files: {}, {:?}", file_content.filename, file_content.parent_files);
+									let expected_filename = file_content.parent_files.last().unwrap();
+									let expected_parent_files = &file_content.parent_files[0..file_content.parent_files.len()-1];
+									// println!("expected_filename: {}, comparison_filename: {}", expected_filename, file_content2.filename);
+									// println!("expected_parent_files: {:?}, comparison parent_files {:?}", expected_parent_files, file_content2.parent_files);
+									if file_content2.filename==*expected_filename && file_content2.parent_files == expected_parent_files {
+										links.insert(parent_files.to_vec(), (ic2, -1));
+										// println!("links: {:#?}", links);
+										found_parent_file_content = true;
 									}
 								}
-							} else {
-								parent_rid = Some(link.1);
+								if !found_parent_file_content {
+									keep_going.store(false, Ordering::Relaxed);
+									panic!("Parent FileListItem not found for file {:?}", file_to_scan.path)
+								}
 							}
 						}
-						trace!("{}:  {}: {:?}", files_set.name, file_content.filename, file_content.parent_files);
-						//does this item exist in db?
-						let sql = where_sql!("SELECT rid, crc, time FROM f WHERE {} AND {} AND {}",
-							("parent_rid", dbfmt_comp(parent_rid, CompOp::Eq)),
-							("filename", dbfmt_comp(Some(file_content.filename.to_string()), CompOp::Eq)),
-							("path", dbfmt_comp(Some(relative_path.to_owned()), CompOp::Eq))
-						);
-						match query_single_row_to_tuple::<(i64, i64, i64)>(&db_path_metadata, &sql) {
-							Ok(row) => {
-								match row {
-									Some((rid, crc, ftime)) => {
-										//row exists, does the data need updating?
-										if crc != file_content.crc {
-											trace!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
-											if file_content.text_contents.is_none() {
+						// println!("{:#?}", links);
+						
+						//update db
+						let mut top_parent_rid: i64 = -1;
+						let mut frid: i64;
+						for file_content in contents {
+							// this is in order of adding, so the files in parent files will always exist, and top parent is always first
+							let depth = file_content.parent_files.len();
+							// find parent_rid
+							let mut parent_rid: Option<i64> = None;
+							if depth>0 {
+								let link = links.get(&file_content.parent_files).unwrap();
+								if link.1==-1 {
+									let filename = file_content.parent_files.last().unwrap().to_owned();
+									let relative_path = relative_path.to_owned();
+									let sql = where_sql!("SELECT rid FROM f WHERE {} AND {} AND {}",
+										("filename", dbfmt_comp(Some(filename), CompOp::Eq)),
+										("path", dbfmt_comp(Some(relative_path), CompOp::Eq)),
+										("depth", dbfmt_comp(Some(depth-1), CompOp::Eq))
+									);
+									match query_to_i64(&db_path_metadata, &sql) {
+										Ok(rid) => {
+											if rid.is_none() {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("file has different crc, need to update database.\nBUT file_content.text_contents is None!");
+												panic!("Couldn't retrieve parent_rid for\n{}", sql);
 											}
+											parent_rid = rid;
+											links.insert(file_content.parent_files.to_vec(), (link.0, parent_rid.unwrap()));
+										}
+										Err(e) => {
+											keep_going.store(false, Ordering::Relaxed);
+											panic!("Error fetching parent_rid: {}", e);
+										}
+									}
+								} else {
+									parent_rid = Some(link.1);
+								}
+							}
+							trace!("{}:  {}: {:?}", files_set.name, file_content.filename, file_content.parent_files);
+							//does this item exist in db?
+							let sql = where_sql!("SELECT rid, crc, time FROM f WHERE {} AND {} AND {}",
+								("parent_rid", dbfmt_comp(parent_rid, CompOp::Eq)),
+								("filename", dbfmt_comp(Some(file_content.filename.to_string()), CompOp::Eq)),
+								("path", dbfmt_comp(Some(relative_path.to_owned()), CompOp::Eq))
+							);
+							match query_single_row_to_tuple::<(i64, i64, i64)>(&db_path_metadata, &sql) {
+								Ok(row) => {
+									match row {
+										Some((rid, crc, ftime)) => {
+											//row exists, does the data need updating?
+											if crc != file_content.crc {
+												trace!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
+												if file_content.text_contents.is_none() {
+													keep_going.store(false, Ordering::Relaxed);
+													panic!("file has different crc, need to update database.\nBUT file_content.text_contents is None!");
+												}
+												//meta
+												let conn = Connection::open(&db_path_metadata).unwrap();
+												let sql = format!("UPDATE f SET size={}, time={}, crc={} WHERE rid={}",
+													dbfmt_t(&file_content.size),
+													dbfmt_t(&filetimeunix),
+													dbfmt_t(&file_content.crc),
+													dbfmt_t(&rid)
+												);
+												if let Err(e) = conn.execute_batch(&sql) {
+													keep_going.store(false, Ordering::Relaxed);
+													panic!("Could not update f at rid={}.\n{}", rid, e);
+												}
+												//main
+												let conn = Connection::open(&db_path_main).unwrap();
+												let sql = format!("UPDATE fsearch SET modified_utc={} WHERE frid = {}",
+													dbfmt_t(&filetimeutc),
+													dbfmt_t(&rid),
+												);
+												if let Err(e) = conn.execute_batch(&sql) {
+													keep_going.store(false, Ordering::Relaxed);
+													panic!("Could not update fsearch at frid={}.\n{}", rid, e);
+												}
+												//contents
+												let conn = Connection::open(&db_path_contents).unwrap();
+												let sql = format!("UPDATE t SET contents = {} WHERE frid = {}",
+													dbfmt(file_content.text_contents),
+													dbfmt_t(&rid)
+												);
+												if let Err(e) = conn.execute_batch(&sql) {
+													keep_going.store(false, Ordering::Relaxed);
+													panic!("Could not update contents at frid={}.\n{}", rid, e);
+												}
+											} else if ftime != filetimeunix {
+												trace!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name, file_content.filename);
+												//meta
+												let conn = Connection::open(&db_path_metadata).unwrap();
+												let sql = format!("UPDATE f SET time={} WHERE rid={}",
+													dbfmt_t(&filetimeunix),
+													dbfmt_t(&rid)
+												);
+												if let Err(e) = conn.execute_batch(&sql) {
+													keep_going.store(false, Ordering::Relaxed);
+													panic!("Could not update f at rid={}.\n{}", rid, e);
+												}
+												//main
+												let conn = Connection::open(&db_path_main).unwrap();
+												let sql = format!("UPDATE fsearch SET modified_utc={} WHERE frid = {}",
+													dbfmt_t(&filetimeutc),
+													dbfmt_t(&rid),
+												);
+												if let Err(e) = conn.execute_batch(&sql) {
+													keep_going.store(false, Ordering::Relaxed);
+													panic!("Could not update fsearch at frid={}.\n{}", rid, e);
+												}
+											} else {
+												trace!("{}:    {} has same crc, no need to update database.", files_set.name, file_content.filename);
+											}
+										}
+										None => {
+											//item doesn't exist in database, insert new row
+											trace!("{}:     file is not in database, inserting.", files_set.name);
 											//meta
 											let conn = Connection::open(&db_path_metadata).unwrap();
-											let sql = format!("UPDATE f SET size={}, time={}, crc={} WHERE rid={}",
+											let sql = format!("INSERT INTO f (filename,path,size,time,crc,depth,parent_rid) VALUES ({},{},{},{},{},{},{})",
+												dbfmt_t(&file_content.filename),
+												dbfmt_t(&relative_path),
 												dbfmt_t(&file_content.size),
 												dbfmt_t(&filetimeunix),
 												dbfmt_t(&file_content.crc),
-												dbfmt_t(&rid)
+												dbfmt_t(&depth),
+												dbfmt(parent_rid)
 											);
 											if let Err(e) = conn.execute_batch(&sql) {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not update f at rid={}.\n{}", rid, e);
+												panic!("Could not insert new row into f.\n{}", e);
+											}
+											//get frid
+											frid = conn.last_insert_rowid();
+											if depth==0 {
+												top_parent_rid = frid;
+											}
+											let sql = format!("UPDATE f SET top_parent_rid = {} WHERE rid = {}", top_parent_rid, frid);
+											if let Err(e) = conn.execute_batch(&sql) {
+												keep_going.store(false, Ordering::Relaxed);
+												panic!("Could not insert new row into f.\n{}", e);
 											}
 											//main
 											let conn = Connection::open(&db_path_main).unwrap();
-											let sql = format!("UPDATE fsearch SET modified_utc={} WHERE frid = {}",
+											let file_extension = file_content.filename.to_lowercase().split('.').last().unwrap().to_string();
+											let sql = format!("INSERT INTO fsearch (frid,filename_search,path_search,modified_utc,filename_ext) VALUES ({},{},{},{},{})",
+												dbfmt_t(&frid),
+												dbfmt_t(&file_content.filename.to_lowercase()),
+												dbfmt_t(&relative_path.to_lowercase()),
 												dbfmt_t(&filetimeutc),
-												dbfmt_t(&rid),
+												dbfmt_t(&file_extension),
 											);
 											if let Err(e) = conn.execute_batch(&sql) {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not update fsearch at frid={}.\n{}", rid, e);
+												panic!("Could not insert new row into fsearch.\n{}", e);
 											}
 											//contents
 											let conn = Connection::open(&db_path_contents).unwrap();
-											let sql = format!("UPDATE t SET contents = {} WHERE frid = {}",
-												dbfmt(file_content.text_contents),
-												dbfmt_t(&rid)
+											// for c in file_content.text_contents.clone().unwrap().as_bytes() { print!("{}-", c) }
+											let sql = format!("INSERT INTO t (frid,contents) VALUES ({},{})",
+												dbfmt_t(&frid),
+												dbfmt(file_content.text_contents)
 											);
 											if let Err(e) = conn.execute_batch(&sql) {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not update contents at frid={}.\n{}", rid, e);
+												panic!("Could not insert new row into contents.\n{}", e);
 											}
-										} else if ftime != filetimeunix {
-											trace!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name, file_content.filename);
-											//meta
-											let conn = Connection::open(&db_path_metadata).unwrap();
-											let sql = format!("UPDATE f SET time={} WHERE rid={}",
-												dbfmt_t(&filetimeunix),
-												dbfmt_t(&rid)
-											);
-											if let Err(e) = conn.execute_batch(&sql) {
-												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not update f at rid={}.\n{}", rid, e);
-											}
-											//main
-											let conn = Connection::open(&db_path_main).unwrap();
-											let sql = format!("UPDATE fsearch SET modified_utc={} WHERE frid = {}",
-												dbfmt_t(&filetimeutc),
-												dbfmt_t(&rid),
-											);
-											if let Err(e) = conn.execute_batch(&sql) {
-												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not update fsearch at frid={}.\n{}", rid, e);
-											}
-										} else {
-											trace!("{}:    {} has same crc, no need to update database.", files_set.name, file_content.filename);
-										}
-									}
-									None => {
-										//item doesn't exist in database, insert new row
-										trace!("{}:     file is not in database, inserting.", files_set.name);
-										//meta
-										let conn = Connection::open(&db_path_metadata).unwrap();
-										let sql = format!("INSERT INTO f (filename,path,size,time,crc,depth,parent_rid) VALUES ({},{},{},{},{},{},{})",
-											dbfmt_t(&file_content.filename),
-											dbfmt_t(&relative_path),
-											dbfmt_t(&file_content.size),
-											dbfmt_t(&filetimeunix),
-											dbfmt_t(&file_content.crc),
-											dbfmt_t(&depth),
-											dbfmt(parent_rid)
-										);
-										if let Err(e) = conn.execute_batch(&sql) {
-											keep_going.store(false, Ordering::Relaxed);
-											panic!("Could not insert new row into f.\n{}", e);
-										}
-										//get frid
-										frid = conn.last_insert_rowid();
-										if depth==0 {
-											top_parent_rid = frid;
-										}
-										let sql = format!("UPDATE f SET top_parent_rid = {} WHERE rid = {}", top_parent_rid, frid);
-										if let Err(e) = conn.execute_batch(&sql) {
-											keep_going.store(false, Ordering::Relaxed);
-											panic!("Could not insert new row into f.\n{}", e);
-										}
-										//main
-										let conn = Connection::open(&db_path_main).unwrap();
-										let file_extension = file_content.filename.to_lowercase().split('.').last().unwrap().to_string();
-										let sql = format!("INSERT INTO fsearch (frid,filename_search,path_search,modified_utc,filename_ext) VALUES ({},{},{},{},{})",
-											dbfmt_t(&frid),
-											dbfmt_t(&file_content.filename.to_lowercase()),
-											dbfmt_t(&relative_path.to_lowercase()),
-											dbfmt_t(&filetimeutc),
-											dbfmt_t(&file_extension),
-										);
-										if let Err(e) = conn.execute_batch(&sql) {
-											keep_going.store(false, Ordering::Relaxed);
-											panic!("Could not insert new row into fsearch.\n{}", e);
-										}
-										//contents
-										let conn = Connection::open(&db_path_contents).unwrap();
-										// for c in file_content.text_contents.clone().unwrap().as_bytes() { print!("{}-", c) }
-										let sql = format!("INSERT INTO t (frid,contents) VALUES ({},{})",
-											dbfmt_t(&frid),
-											dbfmt(file_content.text_contents)
-										);
-										if let Err(e) = conn.execute_batch(&sql) {
-											keep_going.store(false, Ordering::Relaxed);
-											panic!("Could not insert new row into contents.\n{}", e);
 										}
 									}
 								}
-							}
-							Err(e) => {
-								keep_going.store(false, Ordering::Relaxed);
-								panic!("Error running query: {}\n{}", e, sql);
+								Err(e) => {
+									keep_going.store(false, Ordering::Relaxed);
+									panic!("Error running query: {}\n{}", e, sql);
+								}
 							}
 						}
 					}
+					Err(e) => {
+						keep_going.store(false, Ordering::Relaxed);
+						error!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+						panic!("Error extracting text: {}", e);
+					}
 				}
-				Err(e) => {
-					keep_going.store(false, Ordering::Relaxed);
-					error!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
-					panic!("Error extracting text: {}", e);
+			} else {
+				//if the drive or network path have disconnected, then exit now.
+				if !files_set.local_root_path.exists() {
+					//this fileset cutoff early, do not consider any deletions
+					{
+						let conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
+						let sql = "DELETE FROM fdel;";
+						conn.execute_batch(sql).expect("Error deleting from fdel");
+						let sql = "DELETE FROM flddel;";
+						conn.execute_batch(sql).expect("Error deleting from flddel");
+					}
+					error!("Error accessing path {:?}. Exiting early.", files_set.local_root_path);
+					break;
 				}
 			}
-
+			if !keep_going.load(Ordering::Relaxed) {
+				break;
+			}
 		}
-		if !keep_going.load(Ordering::Relaxed) {
-			break;
-		}
-	}
+	});
 
 	if !keep_going.load(Ordering::Relaxed) {
 		//if this fileset was cutoff early, do not consider any deletions
