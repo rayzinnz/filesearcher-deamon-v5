@@ -1,86 +1,23 @@
-﻿--cargo add rusqlite
-
-/*
-#V3
-#treat archieve contents as paths for comparison and file viewing
-#add hash store and comparison
-#store lower case name\path for searching
-#add filename\path into contents data for searching
-#add logging-to-file for errors
-
-#V4
-#multiprocessing
-#split out database files
-#  * metadata (allow for multiple, e.g. per year)
-#  * meta-metadata (indexing of metadata in small db files)
-#  * fts5 contents data (allow for multiple)
-#  * blob gzip of file binaries, optional encryption (allow for multiple)
-
+﻿/*
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\rays\content.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\rays\main.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\rays\metadata.db"
 */
 
+SELECT *
+FROM f
+WHERE f.filename LIKE 'SteeringIndicators.sql'
+;
 
---sqlite3 C:\Users\hrag\dbs\FileSearcherDeamon5\design\main.db
-CREATE TABLE IF NOT EXISTS settings
-(
-setting_name TEXT UNIQUE
-,setting_value TEXT
-);
-INSERT INTO settings (setting_name, setting_value) SELECT 'root_path','C:\Users\hrag' WHERE NOT EXISTS (SELECT 1 FROM settings WHERE setting_name='root_path');
-
-CREATE TABLE IF NOT EXISTS fsearch
-(
-frid INT
-,filename_search TEXT
-,path_search TEXT
-,modified_localtime TEXT
-,filename_ext TEXT
-);
-
---sqlite3 C:\Users\hrag\dbs\FileSearcherDeamon5\design\metadata.db
-CREATE TABLE IF NOT EXISTS f (
-rid INTEGER PRIMARY KEY AUTOINCREMENT
-,filename TEXT
-,path TEXT
-,size INT
-,time INT
-,crc INT
-,archive_path TEXT
-,is_parent INT
-,parent_rid INT
-,top_parent_rid INT
-);
-
---   INSERT INTO fsearch(frid,filename_search,path_search,modified_localtime,filename_ext,is_synced) VALUES (new.rid, lower(new.filename), lower(new.path), datetime(new.time, 'unixepoch', 'localtime')
---   , CASE WHEN new.filename LIKE '%.%' THEN lower(replace(new.filename, rtrim(new.filename, replace(new.filename, '.', '' ) ), '')) ELSE NULL END
---   , (SELECT fld.is_synced FROM fld WHERE fld.rid=new.fld_rid)
---   );
-
---   DELETE FROM fsearch WHERE frid=old.rid;
-
---   UPDATE fsearch SET modified_localtime=datetime(new.time, 'unixepoch', 'localtime') WHERE frid=new.rid;
+SELECT *
+FROM fsearch fs
+WHERE fs.filename_search LIKE 'SteeringIndicators.sql'
+;
 
 
---sqlite3 C:\Users\hrag\dbs\FileSearcherDeamon5\design\content.db
-CREATE TABLE IF NOT EXISTS t (
-rid INTEGER PRIMARY KEY AUTOINCREMENT
-,frid INT
-,contents TEXT
-);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS ti USING fts5(contents, content='t', content_rowid='rid');
-
-CREATE TRIGGER IF NOT EXISTS t_ai AFTER INSERT ON t BEGIN
-  INSERT INTO ti(rowid, contents) VALUES (new.rid, new.contents);
-END;
-
-CREATE TRIGGER IF NOT EXISTS t_ad AFTER DELETE ON t BEGIN
-  INSERT INTO ti(ti, rowid, contents) VALUES('delete', old.rid, old.contents);
-END;
-
-CREATE TRIGGER IF NOT EXISTS t_au AFTER UPDATE ON t BEGIN
-  INSERT INTO ti(ti, rowid, contents) VALUES('delete', old.rid, old.contents);
-  INSERT INTO ti(rowid, contents) VALUES (new.rid, new.contents);
-END;
-
---other
-CREATE TEMP TABLE fdel(frid INT, keep INT);
+SELECT *
+FROM fsearch fs
+WHERE 1=1
+AND fs.filename_ext = 'sql'
+AND fs.filename_search GLOB '**indicator**'
+;
