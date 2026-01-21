@@ -784,6 +784,15 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			conn.execute_batch(sql).expect("error deleting from main db");
 			conn.execute_batch("DETACH DATABASE maindb;").expect("error detaching main db");
 			//meta
+			let sql = "UPDATE fdel
+SET (filename, path) =
+(
+SELECT filename, path
+FROM f
+WHERE f.rid=fdel.frid
+);
+";
+			conn.execute_batch(sql).expect("error updating fdel filename, path");
 			let sql = "DELETE FROM f WHERE f.rid IN (SELECT frid FROM fdel)";
 			let rows_deleted = conn.execute(sql, []).expect("error deleting from meta db");
 			info!("{}: {} file item rows deleted", files_set.name, rows_deleted);
