@@ -37,6 +37,7 @@ fn main() {
 
 	let mut threads_handles: Vec<JoinHandle<()>> = Vec::new();
 	for files_set in files_sets {
+		// println!("{:?}", files_set.exclude_regex);
 		let keep_going_flag = keep_going.clone();
 		let join_handle = thread::Builder::new()
 			.name(files_set.name.to_string())
@@ -209,6 +210,10 @@ fn get_file_listing(keep_going: Arc<AtomicBool>, files_set: &FilesSet) -> Vec<Fi
 													include_file = false;
 												}
 											}
+											// if path.to_string_lossy().contains("flycheck") {
+											// 	println!("{}", path.to_string_lossy());
+											// 	println!("{}", include_file);
+											// }
 											if include_file {
 												files_to_scan.push(
 													FileToScan {
@@ -734,43 +739,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			tx.commit().expect("transaction commit failed");
 			info!("{}: end of fdel_statements", files_set.name);
 		}
-		//check files are actually deleted, instead of just being excluded from scanning
-		let mut removed_dirs: HashSet<String> = HashSet::new();
-		let sql = "SELECT f.rid, f.path, f.filename FROM fdel JOIN f ON f.rid=fdel.frid";
-		match query_to_tuples::<(i64, String, String)>(&db_path_metadata, &sql) {
-			Ok(rows) => {
-				//trace!("fdel rows:\n{:#?}", rows);
-				info!("{}: fdel row count: {}", files_set.name, rows.len());
-				let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
-				let tx = conn.transaction().expect("could not start transaction");
-				for row in rows.iter() {
-					let frid = row.0;
-					let path = row.1.to_string();
-					if removed_dirs.contains(&path) {
-						continue;
-					}
-					let filename = row.2.to_string();
-					let dirpath = files_set.local_root_path.join(&path);
-					if !dirpath.exists() {
-						removed_dirs.insert(path.clone());
-						let sql = format!("INSERT INTO flddel (path) VALUES ({})", dbfmt_t(&path));
-						tx.execute_batch(&sql).expect(&format!("error inserting into fdel table, {}\n", sql));
-					} else {
-						let fullpath = dirpath.join(&filename);
-						if fullpath.exists() {
-							let sql = format!("DELETE FROM fdel WHERE frid = {frid}", );
-							tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
-						}
-					}
-				}
-				tx.commit().expect("transaction commit failed");
-			}
-			Err(e) => {
-				keep_going.store(false, Ordering::Relaxed);
-				panic!("Error fetching pre scanned items: {}", e);
-			}
-		}
-		//now just delete from dbs table
+		//delete from dbs table
 		{
 			let conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
 			//contents
@@ -796,6 +765,43 @@ WHERE f.rid=fdel.frid
 			let sql = "DELETE FROM f WHERE f.rid IN (SELECT frid FROM fdel)";
 			let rows_deleted = conn.execute(sql, []).expect("error deleting from meta db");
 			info!("{}: {} file item rows deleted", files_set.name, rows_deleted);
+		}
+		//check files are actually deleted, instead of just being excluded from scanning
+		let mut removed_dirs: HashSet<String> = HashSet::new();
+		let sql = "SELECT f.rid, f.path, f.filename FROM fdel JOIN f ON f.rid=fdel.frid";
+		match query_to_tuples::<(i64, String, String)>(&db_path_metadata, &sql) {
+			Ok(rows) => {
+				//trace!("fdel rows:\n{:#?}", rows);
+				info!("{}: fdel row count: {}", files_set.name, rows.len());
+				let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
+				let tx = conn.transaction().expect("could not start transaction");
+				for row in rows.iter() {
+					let frid = row.0;
+					let path = row.1.to_string();
+					if removed_dirs.contains(&path) {
+						continue;
+					}
+					let filename = row.2.to_string();
+					let dirpath = files_set.local_root_path.join(&path);
+					if !dirpath.exists() {
+						removed_dirs.insert(path.clone());
+						let sql = format!("INSERT INTO flddel (path) VALUES ({})", dbfmt_t(&path));
+						tx.execute_batch(&sql).expect(&format!("error inserting into fdel table, {}\n", sql));
+					} else {
+						let fullpath = dirpath.join(&filename);
+						if fullpath.exists() {
+//TODO: if file exists, we should delete from fdel, but we should also delete from db's because this may be a new exclusion rule.
+							let sql = format!("DELETE FROM fdel WHERE frid = {frid}", );
+							tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
+						}
+					}
+				}
+				tx.commit().expect("transaction commit failed");
+			}
+			Err(e) => {
+				keep_going.store(false, Ordering::Relaxed);
+				panic!("Error fetching pre scanned items: {}", e);
+			}
 		}
 	}
 

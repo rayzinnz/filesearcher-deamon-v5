@@ -6,6 +6,12 @@ sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\rays\metadata.db"
 
 SELECT *
 FROM f
+WHERE path LIKE '%flycheck0%' AND depth=0
+LIMIT 10
+;
+
+SELECT *
+FROM f
 WHERE f.filename LIKE 'SteeringIndicators.sql'
 ;
 
