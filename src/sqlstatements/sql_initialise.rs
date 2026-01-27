@@ -75,6 +75,8 @@ rid INTEGER PRIMARY KEY AUTOINCREMENT
 	sqls.push(String::from(r#"
 CREATE TABLE IF NOT EXISTS fdel (
 frid INTEGER
+,filename TEXT
+,path TEXT
 );
 "#));
 

@@ -37,6 +37,7 @@ fn main() {
 
 	let mut threads_handles: Vec<JoinHandle<()>> = Vec::new();
 	for files_set in files_sets {
+		// println!("{:?}", files_set.exclude_regex);
 		let keep_going_flag = keep_going.clone();
 		let join_handle = thread::Builder::new()
 			.name(files_set.name.to_string())
@@ -209,6 +210,10 @@ fn get_file_listing(keep_going: Arc<AtomicBool>, files_set: &FilesSet) -> Vec<Fi
 													include_file = false;
 												}
 											}
+											// if path.to_string_lossy().contains("flycheck") {
+											// 	println!("{}", path.to_string_lossy());
+											// 	println!("{}", include_file);
+											// }
 											if include_file {
 												files_to_scan.push(
 													FileToScan {
@@ -734,6 +739,33 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			tx.commit().expect("transaction commit failed");
 			info!("{}: end of fdel_statements", files_set.name);
 		}
+		//delete from dbs table
+		{
+			let conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
+			//contents
+			conn.execute_batch(&format!("ATTACH DATABASE '{}' AS content;", &db_path_contents.to_string_lossy())).expect("error attaching content db");
+			let sql = "DELETE FROM content.t AS t WHERE t.frid IN (SELECT frid FROM fdel)";
+			conn.execute_batch(sql).expect("error deleting from content db");
+			conn.execute_batch("DETACH DATABASE content;").expect("error detaching content db");
+			//main
+			conn.execute_batch(&format!("ATTACH DATABASE '{}' AS maindb;", &db_path_main.to_string_lossy())).expect("error attaching main db");
+			let sql = "DELETE FROM maindb.fsearch AS fs WHERE fs.frid IN (SELECT frid FROM fdel)";
+			conn.execute_batch(sql).expect("error deleting from main db");
+			conn.execute_batch("DETACH DATABASE maindb;").expect("error detaching main db");
+			//meta
+			let sql = "UPDATE fdel
+SET (filename, path) =
+(
+SELECT filename, path
+FROM f
+WHERE f.rid=fdel.frid
+);
+";
+			conn.execute_batch(sql).expect("error updating fdel filename, path");
+			let sql = "DELETE FROM f WHERE f.rid IN (SELECT frid FROM fdel)";
+			let rows_deleted = conn.execute(sql, []).expect("error deleting from meta db");
+			info!("{}: {} file item rows deleted", files_set.name, rows_deleted);
+		}
 		//check files are actually deleted, instead of just being excluded from scanning
 		let mut removed_dirs: HashSet<String> = HashSet::new();
 		let sql = "SELECT f.rid, f.path, f.filename FROM fdel JOIN f ON f.rid=fdel.frid";
@@ -758,6 +790,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 					} else {
 						let fullpath = dirpath.join(&filename);
 						if fullpath.exists() {
+//TODO: if file exists, we should delete from fdel, but we should also delete from db's because this may be a new exclusion rule.
 							let sql = format!("DELETE FROM fdel WHERE frid = {frid}", );
 							tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
 						}
@@ -769,24 +802,6 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 				keep_going.store(false, Ordering::Relaxed);
 				panic!("Error fetching pre scanned items: {}", e);
 			}
-		}
-		//now just delete from dbs table
-		{
-			let conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
-			//contents
-			conn.execute_batch(&format!("ATTACH DATABASE '{}' AS content;", &db_path_contents.to_string_lossy())).expect("error attaching content db");
-			let sql = "DELETE FROM content.t AS t WHERE t.frid IN (SELECT frid FROM fdel)";
-			conn.execute_batch(sql).expect("error deleting from content db");
-			conn.execute_batch("DETACH DATABASE content;").expect("error detaching content db");
-			//main
-			conn.execute_batch(&format!("ATTACH DATABASE '{}' AS maindb;", &db_path_main.to_string_lossy())).expect("error attaching main db");
-			let sql = "DELETE FROM maindb.fsearch AS fs WHERE fs.frid IN (SELECT frid FROM fdel)";
-			conn.execute_batch(sql).expect("error deleting from main db");
-			conn.execute_batch("DETACH DATABASE maindb;").expect("error detaching main db");
-			//meta
-			let sql = "DELETE FROM f WHERE f.rid IN (SELECT frid FROM fdel)";
-			let rows_deleted = conn.execute(sql, []).expect("error deleting from meta db");
-			info!("{}: {} file item rows deleted", files_set.name, rows_deleted);
 		}
 	}
 
