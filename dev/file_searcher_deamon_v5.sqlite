@@ -1,13 +1,19 @@
 ﻿/*
-sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\rays\content.db"
-sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\rays\main.db"
-sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\rays\metadata.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\content.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\main.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\metadata.db"
 */
 
 SELECT *
 FROM f
-WHERE path LIKE '%flycheck0%' AND depth=0
+WHERE filename = '00000000398DDD930D8E754F8D7B687294FE7EBF24DB2000.msg'
+--AND depth=0
 LIMIT 10
+;
+
+SELECT *
+FROM f
+WHERE top_parent_rid = 11249
 ;
 
 SELECT *
@@ -27,3 +33,31 @@ WHERE 1=1
 AND fs.filename_ext = 'sql'
 AND fs.filename_search GLOB '**indicator**'
 ;
+
+
+SELECT f1.rid FROM f f1
+JOIN f f0 ON f0.rid = f1.parent_rid
+WHERE f1.filename = '1st msg.msg' AND f1.depth = 1
+AND f0.filename = '0000000021E0AFA9061A34478C80FDB1BAD8EB19070006FB7EE1848CC24391723BE05D1422A500000000010C000006FB7EE1848CC24391723BE05D1422A500012493CBF10000.msg'
+AND f0.path = '2025'
+
+SELECT f1.rid
+FROM f f1
+JOIN f f0 ON f0.rid = f1.parent_rid
+WHERE f1.filename = 'SolarWinds Report-Certificate Owners with Legacy Email IDs_00.xlsx' AND f1.path = '2025' AND f1.depth = 1
+AND f0.filename = '0000000021E0AFA9061A34478C80FDB1BAD8EB19070006FB7EE1848CC24391723BE05D1422A500000000010C000006FB7EE1848CC24391723BE05D1422A500010D1BE1B80000.msg' AND f0.path = '2025' AND f0.depth = 0
+;
+
+
+CREATE TABLE f (
+rid INTEGER PRIMARY KEY AUTOINCREMENT
+,filename TEXT
+,path TEXT
+,size INT
+,time INT
+,crc INT
+,depth INT
+,parent_rid INT
+,top_parent_rid INT
+);
+

@@ -350,7 +350,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 
 	if let Err(e) = initalise_database(&files_set) {
 		keep_going.store(false, Ordering::Relaxed);
-		panic!("Error initialising main db: {}", e)
+		panic!("{}: Error initialising main db: {}", files_set.name, e)
 	}
 
 	let mut db_path_main = files_set.db_dir.clone();
@@ -397,7 +397,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 				let filetimelocal: DateTime<Local> = file_to_scan.mdate.into();
 				//let filetimeunix: i64 = file_to_scan.mdate.duration_since(UNIX_EPOCH).unwrap().as_secs() as i64; //i64 not u64 so this can go into sqlite
 				let filetimeunix: i64 = filetimeutc.timestamp();
-				trace!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+				debug!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 				if (ifile+1) % 10000 ==0 {
 					info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 				}
@@ -436,16 +436,24 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 										let mut parent_rid = row.3;
 										let crc = row.4;
 										let mut parent_files: Vec<String> = Vec::new();
+										// println!("{:#?}", row);
 										//build up parent files
+										let mut found_parent:bool = false;
 										while parent_rid.is_some() {
 											for row2 in rows.iter() {
+												// println!("  {:#?}", row2);
 												let rid2 = row2.0;
 												if rid2==parent_rid.unwrap() {
 													let filename2 = row2.1.to_string();
 													parent_rid = row2.3;
 													parent_files.push(filename2);
+													found_parent = true;
 													break;
 												}
+											}
+											if !found_parent {
+												panic!("{}: No parent found for:\n{:#?}\ninside this set:\n{:#?}", files_set.name, row, rows)
+												//TODO we should auto-cleanup this, but for now just delete entire database and start again
 											}
 										}
 										parent_files.reverse();
@@ -454,16 +462,17 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								}
 								Err(e) => {
 									keep_going.store(false, Ordering::Relaxed);
-									panic!("Error fetching pre scanned items: {}", e);
+									panic!("{}: Error fetching pre scanned items: {}", files_set.name, e);
 								}
 							}
+							// println!("{:#?}", pr.e_scanned_items)
 						} else {
 							info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 						}
 					}
 					Err(e) => {
 						keep_going.store(false, Ordering::Relaxed);
-						panic!("Error fetching top_parent_rid: {}", e);
+						panic!("{}: Error fetching top_parent_rid: {}", files_set.name, e);
 					}
 				}
 				// println!("pre_scanned_items:\n{:#?}", pre_scanned_items);
@@ -474,18 +483,18 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 						//always at least one file, even if empty
 						if contents.is_empty() {
 							keep_going.store(false, Ordering::Relaxed);
-							panic!("Unexpected empty Vec<FileListItem> from extract_text_from_file()");
+							panic!("{}: Unexpected empty Vec<FileListItem> from extract_text_from_file()", files_set.name);
 						}
 						//first item is always parent, with 0 parent files
 						let parent_item = &contents[0];
 						if !parent_item.parent_files.is_empty() {
 							keep_going.store(false, Ordering::Relaxed);
-							panic!("Unexpected parent_files in parent item from extract_text_from_file(): {:#?}", parent_item);
+							panic!("{}: Unexpected parent_files in parent item from extract_text_from_file(): {:#?}", files_set.name, parent_item);
 						}
 
 						//build up a heirarchy of links
 						// let mut file_links: Vec<(i64, i64)> = Vec::new(); //links to contents-index and db-rid
-						let mut links:HashMap<Vec<String>, (usize, i64)> = HashMap::new(); //links to contents-index and db-rid
+						let mut links:HashMap<Vec<String>, (usize, usize, i64)> = HashMap::new(); //links to (contents-index, depth, db-rid)
 						for (ic, file_content) in contents.iter().enumerate(){
 							let parent_files = file_content.parent_files.to_vec();
 							if ic>0 && !links.contains_key(&parent_files) {
@@ -502,14 +511,14 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 									// println!("expected_filename: {}, comparison_filename: {}", expected_filename, file_content2.filename);
 									// println!("expected_parent_files: {:?}, comparison parent_files {:?}", expected_parent_files, file_content2.parent_files);
 									if file_content2.filename==*expected_filename && file_content2.parent_files == expected_parent_files {
-										links.insert(parent_files.to_vec(), (ic2, -1));
-										// println!("links: {:#?}", links);
+										links.insert(parent_files.to_vec(), (ic2, expected_parent_files.len(), -1));
+										// println!("links1: {:#?}", links);
 										found_parent_file_content = true;
 									}
 								}
 								if !found_parent_file_content {
 									keep_going.store(false, Ordering::Relaxed);
-									panic!("Parent FileListItem not found for file {:?}", file_to_scan.path)
+									panic!("{}: Parent FileListItem not found for file {:?}", files_set.name, file_to_scan.path)
 								}
 							}
 						}
@@ -525,30 +534,47 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 							let mut parent_rid: Option<i64> = None;
 							if depth>0 {
 								let link = links.get(&file_content.parent_files).unwrap();
-								if link.1==-1 {
+								// println!("update db: find parent_rid: link: {:?}", link);
+								if link.2==-1 {
 									let filename = file_content.parent_files.last().unwrap().to_owned();
-									let relative_path = relative_path.to_owned();
-									let sql = where_sql!("SELECT rid FROM f WHERE {} AND {} AND {}",
-										("filename", dbfmt_comp(Some(filename), CompOp::Eq)),
-										("path", dbfmt_comp(Some(relative_path), CompOp::Eq)),
-										("depth", dbfmt_comp(Some(depth-1), CompOp::Eq))
+									//link through parents to top parent.
+									let mut fromsql:String = format!("FROM f f{}\n", depth-1);
+									let mut wheresql:String = where_sql!("WHERE {} AND {} AND {}\n",
+										(format!("f{}.filename", depth-1), dbfmt_comp(Some(filename), CompOp::Eq)),
+										(format!("f{}.path", depth-1), dbfmt_comp(Some(relative_path.to_string()), CompOp::Eq)),
+										(format!("f{}.depth", depth-1), dbfmt_comp(Some(depth-1), CompOp::Eq))
 									);
+									let pf_iter = file_content.parent_files.clone();
+									let pf_iter = pf_iter[..pf_iter.len()-1].to_owned();
+									for parent_filename in pf_iter.iter().enumerate().rev() {
+										fromsql.push_str(&format!("JOIN f f{} ON f{}.rid = f{}.parent_rid\n", parent_filename.0, parent_filename.0, parent_filename.0+1));
+										wheresql.push_str(&where_sql!("AND {} AND {} AND {}\n",
+											(format!("f{}.filename", parent_filename.0), dbfmt_comp(Some(parent_filename.1.to_string()), CompOp::Eq)),
+											(format!("f{}.path", parent_filename.0), dbfmt_comp(Some(relative_path.to_string()), CompOp::Eq)),
+											(format!("f{}.depth", parent_filename.0), dbfmt_comp(Some(parent_filename.0), CompOp::Eq))
+										));
+									}
+									let sql = format!("SELECT f{}.rid\n{}{}", depth-1, fromsql, wheresql);
+									// println!("update db: find parent_rid: sql: {}", sql);
+									// println!("parent_files {:?}", file_content.parent_files);
+									// println!("links2: {:#?}", links);
 									match query_to_i64(&db_path_metadata, &sql) {
 										Ok(rid) => {
 											if rid.is_none() {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Couldn't retrieve parent_rid for\n{}", sql);
+												panic!("{}: Couldn't retrieve parent_rid for\n{}", files_set.name, sql);
 											}
 											parent_rid = rid;
-											links.insert(file_content.parent_files.to_vec(), (link.0, parent_rid.unwrap()));
+											links.insert(file_content.parent_files.to_vec(), (link.0, depth, parent_rid.unwrap()));
+											// println!("links3: {:#?}", links);
 										}
 										Err(e) => {
 											keep_going.store(false, Ordering::Relaxed);
-											panic!("Error fetching parent_rid: {}", e);
+											panic!("{}: Error fetching parent_rid: {}", files_set.name, e);
 										}
 									}
 								} else {
-									parent_rid = Some(link.1);
+									parent_rid = Some(link.2);
 								}
 							}
 							trace!("{}:  {}: {:?}", files_set.name, file_content.filename, file_content.parent_files);
@@ -564,10 +590,11 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 										Some((rid, crc, ftime)) => {
 											//row exists, does the data need updating?
 											if crc != file_content.crc {
-												trace!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
+												info!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
+												// panic!("***1");
 												if file_content.text_contents.is_none() {
 													keep_going.store(false, Ordering::Relaxed);
-													panic!("file has different crc, need to update database.\nBUT file_content.text_contents is None!");
+													panic!("{}: file \"{}/{} - {}\" has different crc, need to update database.\nBUT file_content.text_contents is None!", files_set.name, relative_path, parent_filename, file_content.filename);
 												}
 												//meta
 												let conn = Connection::open(&db_path_metadata).unwrap();
@@ -579,7 +606,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												);
 												if let Err(e) = conn.execute_batch(&sql) {
 													keep_going.store(false, Ordering::Relaxed);
-													panic!("Could not update f at rid={}.\n{}", rid, e);
+													panic!("{}: Could not update f at rid={}.\n{}", files_set.name, rid, e);
 												}
 												//main
 												let conn = Connection::open(&db_path_main).unwrap();
@@ -589,7 +616,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												);
 												if let Err(e) = conn.execute_batch(&sql) {
 													keep_going.store(false, Ordering::Relaxed);
-													panic!("Could not update fsearch at frid={}.\n{}", rid, e);
+													panic!("{}: Could not update fsearch at frid={}.\n{}", files_set.name, rid, e);
 												}
 												//contents
 												let conn = Connection::open(&db_path_contents).unwrap();
@@ -599,10 +626,11 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												);
 												if let Err(e) = conn.execute_batch(&sql) {
 													keep_going.store(false, Ordering::Relaxed);
-													panic!("Could not update contents at frid={}.\n{}", rid, e);
+													panic!("{}: Could not update contents at frid={}.\n{}", files_set.name, rid, e);
 												}
 											} else if ftime != filetimeunix {
-												trace!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name, file_content.filename);
+												info!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name, file_content.filename);
+												// panic!("***2");
 												//meta
 												let conn = Connection::open(&db_path_metadata).unwrap();
 												let sql = format!("UPDATE f SET time={} WHERE rid={}",
@@ -611,7 +639,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												);
 												if let Err(e) = conn.execute_batch(&sql) {
 													keep_going.store(false, Ordering::Relaxed);
-													panic!("Could not update f at rid={}.\n{}", rid, e);
+													panic!("{}: Could not update f at rid={}.\n{}", files_set.name, rid, e);
 												}
 												//main
 												let conn = Connection::open(&db_path_main).unwrap();
@@ -621,7 +649,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 												);
 												if let Err(e) = conn.execute_batch(&sql) {
 													keep_going.store(false, Ordering::Relaxed);
-													panic!("Could not update fsearch at frid={}.\n{}", rid, e);
+													panic!("{}: Could not update fsearch at frid={}.\n{}", files_set.name, rid, e);
 												}
 											} else {
 												trace!("{}:    {} has same crc, no need to update database.", files_set.name, file_content.filename);
@@ -643,7 +671,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											);
 											if let Err(e) = conn.execute_batch(&sql) {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not insert new row into f.\n{}", e);
+												panic!("{}: Could not insert new row into f.\n{}", files_set.name, e);
 											}
 											//get frid
 											frid = conn.last_insert_rowid();
@@ -653,7 +681,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											let sql = format!("UPDATE f SET top_parent_rid = {} WHERE rid = {}", top_parent_rid, frid);
 											if let Err(e) = conn.execute_batch(&sql) {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not insert new row into f.\n{}", e);
+												panic!("{}: Could not insert new row into f.\n{}", files_set.name, e);
 											}
 											//main
 											let conn = Connection::open(&db_path_main).unwrap();
@@ -667,7 +695,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											);
 											if let Err(e) = conn.execute_batch(&sql) {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not insert new row into fsearch.\n{}", e);
+												panic!("{}: Could not insert new row into fsearch.\n{}", files_set.name, e);
 											}
 											//contents
 											let conn = Connection::open(&db_path_contents).unwrap();
@@ -678,14 +706,14 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											);
 											if let Err(e) = conn.execute_batch(&sql) {
 												keep_going.store(false, Ordering::Relaxed);
-												panic!("Could not insert new row into contents.\n{}", e);
+												panic!("{}: Could not insert new row into contents.\n{}", files_set.name, e);
 											}
 										}
 									}
 								}
 								Err(e) => {
 									keep_going.store(false, Ordering::Relaxed);
-									panic!("Error running query: {}\n{}", e, sql);
+									panic!("{}: Error running query: {}\n{}", files_set.name, e, sql);
 								}
 							}
 						}
@@ -693,7 +721,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 					Err(e) => {
 						keep_going.store(false, Ordering::Relaxed);
 						error!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
-						panic!("Error extracting text: {}", e);
+						panic!("{}: Error extracting text: {}", files_set.name, e);
 					}
 				}
 			} else {
@@ -800,7 +828,7 @@ WHERE f.rid=fdel.frid
 			}
 			Err(e) => {
 				keep_going.store(false, Ordering::Relaxed);
-				panic!("Error fetching pre scanned items: {}", e);
+				panic!("{}: Error fetching pre scanned items: {}", files_set.name, e);
 			}
 		}
 	}
