@@ -1,5 +1,6 @@
 use async_walkdir::WalkDir;
 use chrono::{DateTime, Local, Utc};
+use colored::*;
 use crc_fast::{checksum_file, CrcAlgorithm::Crc64Nvme};
 use extract_text::*;
 use futures_lite::future::block_on;
@@ -133,7 +134,7 @@ struct FileToScan {
 }
 
 fn get_file_listing(keep_going: Arc<AtomicBool>, files_set: &FilesSet) -> Vec<FileToScan> {
-    info!("{}: Starting to traverse directory: {:?}", files_set.name, files_set.local_root_path);
+    info!("{}: Starting to traverse directory: {:?}", files_set.name.green(), files_set.local_root_path);
 	//let p = PathBuf::new();
 	//p.metadata()?.modified()
 
@@ -181,7 +182,7 @@ fn get_file_listing(keep_going: Arc<AtomicBool>, files_set: &FilesSet) -> Vec<Fi
 						// println!("{} {}", file_count, path.to_string_lossy());
 						// info!("{} files scanned, {} files included", files_set.name, files_set.local_root_path);
 						if file_count % 10000 == 0 {
-							info!("{}: scanned {} files", files_set.name, file_count);
+							info!("{}: scanned {} files", files_set.name.green(), file_count);
 						}
 						match entry.metadata().await {
 							Ok(path_metadata) => {
@@ -274,7 +275,7 @@ fn get_file_listing(keep_going: Arc<AtomicBool>, files_set: &FilesSet) -> Vec<Fi
 						// println!("{} {}", file_count, path.to_string_lossy());
 						// info!("{} files scanned, {} files included", files_set.name, files_set.local_root_path);
 						if file_count % 10000 == 0 {
-							info!("{}: scanned {} files", files_set.name, file_count);
+							info!("{}: scanned {} files", files_set.name.green(), file_count);
 						}
 						match entry.metadata().await {
 							Ok(path_metadata) => {
@@ -370,9 +371,9 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 	files_to_scan.sort_unstable_by_key(|f| Reverse(f.mdate));
 	// println!("{:#?}", files_to_scan);
 
-    info!("{}: Finished traversing directory {:?}", files_set.name, files_set.local_root_path);
+    info!("{}: Finished traversing directory {:?}", files_set.name.green(), files_set.local_root_path);
 
-	info!("{}: Extracting text from {} files", files_set.name, files_to_scan.len());
+	info!("{}: Extracting text from {} files", files_set.name.green(), files_to_scan.len());
 
 	//flag all files to be deleted. Then unflag them 1-by-1.
 	{
@@ -399,7 +400,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 				let filetimeunix: i64 = filetimeutc.timestamp();
 				debug!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 				if (ifile+1) % 10000 ==0 {
-					info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+					info!("{}: {} ({}/{}) {} ({})", files_set.name.green(), filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 				}
 				let parent_filename = file_to_scan.path.file_name().unwrap().to_string_lossy().to_string();
 				let relative_path = path_to_agnostic_relative(&file_to_scan.path.parent().unwrap(), &files_set.local_root_path);
@@ -425,7 +426,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								trace!("{}: CRC match, so skip.", files_set.name);
 								continue;
 							} else {
-								info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+								info!("{}: {} ({}/{}) {} ({})", files_set.name.green(), filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 							}
 							let sql = format!("SELECT rid, filename, depth, parent_rid, crc FROM f WHERE top_parent_rid = {} ORDER BY rid", top_parent_rid);
 							match query_to_tuples::<(i64, String, i64, Option<i64>, i64)>(&db_path_metadata, &sql) {
@@ -467,7 +468,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 							}
 							// println!("{:#?}", pr.e_scanned_items)
 						} else {
-							info!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+							info!("{}: {} ({}/{}) {} ({})", files_set.name.green(), filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
 						}
 					}
 					Err(e) => {
@@ -590,7 +591,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 										Some((rid, crc, ftime)) => {
 											//row exists, does the data need updating?
 											if crc != file_content.crc {
-												info!("{}:     {} has different crc, need to update database.", files_set.name, file_content.filename);
+												info!("{}:     {} has different crc, need to update database.", files_set.name.green(), file_content.filename);
 												// panic!("***1");
 												if file_content.text_contents.is_none() {
 													keep_going.store(false, Ordering::Relaxed);
@@ -629,7 +630,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 													panic!("{}: Could not update contents at frid={}.\n{}", files_set.name, rid, e);
 												}
 											} else if ftime != filetimeunix {
-												info!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name, file_content.filename);
+												info!("{}:     {} has same crc but filetime is different, only update timestamp.", files_set.name.green(), file_content.filename);
 												// panic!("***2");
 												//meta
 												let conn = Connection::open(&db_path_metadata).unwrap();
@@ -758,14 +759,14 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 		//remove existing files from fdel
 		{
 			let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
-			info!("{}: start of {} fdel_statements", files_set.name, fdel_statements.len());
+			info!("{}: start of {} fdel_statements", files_set.name.green(), fdel_statements.len());
 			let tx = conn.transaction().expect("could not start transaction");
 			for sql in fdel_statements {
 				tx.execute_batch(&sql).expect(&format!("error deleting from fdel table, {}\n", sql));
 			}
-			info!("{}: commit of fdel_statements", files_set.name);
+			info!("{}: commit of fdel_statements", files_set.name.green());
 			tx.commit().expect("transaction commit failed");
-			info!("{}: end of fdel_statements", files_set.name);
+			info!("{}: end of fdel_statements", files_set.name.green());
 		}
 		//delete from dbs table
 		{
@@ -792,7 +793,7 @@ WHERE f.rid=fdel.frid
 			conn.execute_batch(sql).expect("error updating fdel filename, path");
 			let sql = "DELETE FROM f WHERE f.rid IN (SELECT frid FROM fdel)";
 			let rows_deleted = conn.execute(sql, []).expect("error deleting from meta db");
-			info!("{}: {} file item rows deleted", files_set.name, rows_deleted);
+			info!("{}: {} file item rows deleted", files_set.name.green(), rows_deleted);
 		}
 		//check files are actually deleted, instead of just being excluded from scanning
 		let mut removed_dirs: HashSet<String> = HashSet::new();
@@ -800,7 +801,7 @@ WHERE f.rid=fdel.frid
 		match query_to_tuples::<(i64, String, String)>(&db_path_metadata, &sql) {
 			Ok(rows) => {
 				//trace!("fdel rows:\n{:#?}", rows);
-				info!("{}: fdel row count: {}", files_set.name, rows.len());
+				info!("{}: fdel row count: {}", files_set.name.green(), rows.len());
 				let mut conn = Connection::open(&db_path_metadata).expect("cannot connect to meta db");
 				let tx = conn.transaction().expect("could not start transaction");
 				for row in rows.iter() {
@@ -828,10 +829,10 @@ WHERE f.rid=fdel.frid
 			}
 			Err(e) => {
 				keep_going.store(false, Ordering::Relaxed);
-				panic!("{}: Error fetching pre scanned items: {}", files_set.name, e);
+				panic!("{}: Error fetching pre scanned items: {}", files_set.name.green(), e);
 			}
 		}
 	}
 
-	info!("{}: END of files_set: {:?}", files_set.name, files_set.name);
+	info!("{}: END of files_set: {:?}", files_set.name.green(), files_set.name);
 }
