@@ -797,7 +797,7 @@ dependencies = [
 [[package]]
 name = "extract_text"
 version = "1.0.0"
-source = "git+https://github.com/rayzinnz/rust-extract-text.git#1859b481a963a1e2fcc026788bb698e88b38c902"
+source = "git+https://github.com/rayzinnz/rust-extract-text.git#0a826a13e0fd9864774f58622ebf641ea7e661c4"
 dependencies = [
  "anyhow",
  "calamine",
