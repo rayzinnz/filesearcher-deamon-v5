@@ -383,7 +383,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 		}
 		let mut fdel_statements:Vec<String> = Vec::new();
 		let runtime = tokio::runtime::Runtime::new().expect("Error starting tokio::runtime");
-		thread::scope(|s| { runtime.block_on( async { 
+		runtime.block_on( async { 
 			for (ifile, file_to_scan) in files_to_scan.iter().enumerate() {
 				if !keep_going.load(Ordering::Relaxed) {
 					break;
@@ -475,11 +475,9 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 					// println!("pre_scanned_items:\n{:#?}", pre_scanned_items);
 					let keep_going_flag = keep_going.clone();
 					let (progress_tx, mut progress_rx) = mpsc::channel::<TxMsg>(32);
-					//let file_to_scan2 = file_to_scan.clone().deref();
-					// let file_to_scan_path = file_to_scan.to_owned().path.as_path();
-					let join_handle = thread::Builder::new()
-						.spawn_scoped(s, move || { extract_text_from_file(file_to_scan.path.as_path(), pre_scanned_items, keep_going_flag, Some(&progress_tx)) })
-						.expect("Failed to spawn thread");
+					let file_to_scan_path_buf = file_to_scan.path.clone();
+					let work_handle = tokio::task::spawn(async move { extract_text_from_file(&file_to_scan_path_buf, pre_scanned_items, keep_going_flag, Some(&progress_tx)).await });
+
 					while let Some(txmsg) = progress_rx.recv().await {
 						match txmsg.txlevel {
 							TxLevel::Progress => { },
@@ -491,7 +489,9 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 							TxLevel::Trace => { trace!("{}", txmsg.message); }
 						}
 					}
-					match join_handle.join() {
+
+					// Wait for the work to finish and get the final result
+					match work_handle.await {
 						Ok(extract_text_from_file_return) => {
 							match extract_text_from_file_return {
 								Ok(contents) => {
@@ -747,12 +747,9 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 								}
 							}
 
-						}
-						Err(e) => {
-							error!("thread join error: {:?}", e);
-							keep_going.store(false, Ordering::Relaxed);
-						}
-					}
+						},
+						Err(e) => panic!("[ERROR] Error awaiting work_handle for extract_text_from_file\n{}", e),
+					} 					
 				} else {
 					//if the drive or network path have disconnected, then exit now.
 					if !files_set.local_root_path.exists() {
@@ -773,7 +770,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 					break;
 				}
 			}
-		});});
+		});
 
 		if !keep_going.load(Ordering::Relaxed) {
 			//if this fileset was cutoff early, do not consider any deletions
