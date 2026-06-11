@@ -741,9 +741,16 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 									}
 								}
 								Err(e) => {
-									keep_going.store(false, Ordering::Relaxed);
-									error!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
-									panic!("{}: Error extracting text: {}", files_set.name, e);
+									if e.to_string().contains("locked") {
+										//if file is locked, just skip this file and continue
+										error!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+										error!("{}: Error extracting text: {}", files_set.name, e);
+										continue;
+									} else {
+										keep_going.store(false, Ordering::Relaxed);
+										error!("{}: {} ({}/{}) {} ({})", files_set.name, filetimelocal.format("%Y-%m-%d %H:%M:%S"), ifile+1, files_to_scan.len(), file_to_scan.path.to_string_lossy(), format_bytes(file_to_scan.size));
+										panic!("{}: Error extracting text: {}", files_set.name, e);
+									}
 								}
 							}
 
