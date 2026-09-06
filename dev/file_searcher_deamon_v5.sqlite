@@ -2,6 +2,10 @@
 sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\content.db"
 sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\main.db"
 sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\metadata.db"
+
+sqlite3 /home/ray/dbs/rays/metadata.db
+sqlite3 /home/ray/dbs/rays/main.db
+sqlite3 /home/ray/dbs/rays/content.db
 */
 
 SELECT *

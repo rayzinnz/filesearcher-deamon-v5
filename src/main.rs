@@ -600,6 +600,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 											("filename", dbfmt_comp(Some(file_content.filename.to_string()), CompOp::Eq)),
 											("path", dbfmt_comp(Some(relative_path.to_owned()), CompOp::Eq))
 										);
+										trace!("{} sql:\n{}", files_set.name, sql);
 										match query_single_row_to_tuple::<(i64, i64, i64)>(&db_path_metadata, &sql) {
 											Ok(row) => {
 												match row {
@@ -693,6 +694,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 														}
 														//get frid
 														frid = conn.last_insert_rowid();
+														trace!("{} new inserted f: {}, depth: {}", files_set.name, frid, depth);
 														if depth==0 {
 															top_parent_rid = frid;
 														}
