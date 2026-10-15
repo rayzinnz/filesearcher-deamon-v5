@@ -1,12 +1,36 @@
 ﻿/*
-sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\content.db"
-sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\main.db"
-sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\emails\metadata.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\content.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\main.db"
+sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\metadata.db"
 
 sqlite3 /home/ray/dbs/rays/metadata.db
 sqlite3 /home/ray/dbs/rays/main.db
 sqlite3 /home/ray/dbs/rays/content.db
 */
+
+--delete files from 3 dbs
+-- sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\main.db"
+attach 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\metadata.db' AS meta;
+attach 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\content.db' AS content;
+
+select count(*) from fsearch where filename_ext = 'dbf';
+
+select *
+from fsearch fs
+	JOIN meta.f f ON f.rid = fs.frid
+	JOIN content.t t ON t.frid = fs.frid
+where fs.filename_ext = 'dbf'
+limit 10
+;
+
+DELETE FROM content.t WHERE frid IN (SELECT fs.frid FROM fsearch fs WHERE fs.filename_ext = 'dbf');
+select changes();
+DELETE FROM meta.f WHERE rid IN (SELECT fs.frid FROM fsearch fs WHERE fs.filename_ext = 'dbf');
+select changes();
+DELETE FROM fsearch WHERE filename_ext = 'dbf';
+select changes();
+
+------------------------------
 
 SELECT *
 FROM f
