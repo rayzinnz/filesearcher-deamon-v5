@@ -13,7 +13,7 @@ use regex::Regex;
 use rusqlite::{Connection};
 use tokio::sync::mpsc;
 use std::{
-	cmp::Reverse, collections::{HashMap, HashSet}, error::Error, fs, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread::{self, JoinHandle}
+	cmp::Reverse, collections::{HashMap, HashSet}, env, error::Error, fs, path::PathBuf, sync::{Arc, atomic::{AtomicBool, Ordering}}, thread::{self, JoinHandle}
 };
 // use walkdir::WalkDir;
 
@@ -29,7 +29,14 @@ fn main() {
     let keep_going_flag = keep_going.clone();
     let _watch_for_quit_handle = thread::spawn(move || {watch_for_quit(keep_going_flag);});
 
-	let files_sets:Vec<FilesSet> = config::get_file_sets(None);
+	let mut files_sets:Vec<FilesSet> = config::get_file_sets(None);
+
+	//if an argument passed in, only run the specified file_set
+	let args: Vec<String> = env::args().collect();
+	for arg in args.iter().skip(1) {
+		info!("Only scanning for file set: {arg}");
+		files_sets.retain(|fs| &fs.name==arg);
+	}
 
 	let mut threads_handles: Vec<JoinHandle<()>> = Vec::new();
 	for files_set in files_sets {
