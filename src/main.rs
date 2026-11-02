@@ -839,7 +839,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 			}
 			//check files are actually deleted, instead of just being excluded from scanning
 			let mut removed_dirs: HashSet<String> = HashSet::new();
-			let sql = "SELECT f.rid, f.path, f.filename FROM fdel JOIN f ON f.rid=fdel.frid";
+			let sql = "SELECT fdel.frid, fdel.path, fdel.filename FROM fdel";
 			match query_to_tuples::<(i64, String, String)>(&db_path_metadata, &sql) {
 				Ok(rows) => {
 					//trace!("fdel rows:\n{:#?}", rows);
@@ -854,6 +854,7 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 						}
 						let filename = row.2.to_string();
 						let dirpath = files_set.local_root_path.join(&path);
+						// println!("{:?} - {}", row, dirpath.to_string_lossy());
 						if !dirpath.exists() {
 							removed_dirs.insert(path.clone());
 							let sql = format!("INSERT INTO flddel (path) VALUES ({})", dbfmt_t(&path));

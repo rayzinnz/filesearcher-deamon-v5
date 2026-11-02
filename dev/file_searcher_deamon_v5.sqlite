@@ -8,6 +8,14 @@ sqlite3 /home/ray/dbs/rays/main.db
 sqlite3 /home/ray/dbs/rays/content.db
 */
 
+
+/*
+meta - f,fdel,flddel
+main - settings,fsearch
+content - fts5,text
+*/
+
+
 --delete files from 3 dbs
 -- sqlite3 "C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\main.db"
 attach 'C:\Users\hrag\dbs\FileSearcherDeamon5\ElimsDataPrd\metadata.db' AS meta;
