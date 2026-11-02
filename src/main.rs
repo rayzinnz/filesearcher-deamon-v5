@@ -824,6 +824,9 @@ fn update_fileset(keep_going: Arc<AtomicBool>, files_set: FilesSet) {
 				conn.execute_batch(sql).expect("error deleting from main db");
 				conn.execute_batch("DETACH DATABASE maindb;").expect("error detaching main db");
 				//meta
+				//only include depth 0 files in fdels
+				let sql = "DELETE FROM fdel WHERE NOT EXISTS (SELECT 1 FROM f WHERE f.rid=fdel.frid AND f.depth=0)";
+				conn.execute_batch(sql).expect("error removing non-depth-0 from fdel");
 				let sql = "UPDATE fdel
 	SET (filename, path) =
 	(
