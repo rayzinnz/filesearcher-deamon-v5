@@ -6,7 +6,7 @@ use extract_text::*;
 use futures_lite::future::block_on;
 use futures_lite::stream::StreamExt;
 use helper_lib::{
-	self, asyncs::{TxLevel, TxMsg}, datetime::naivedate_to_local, paths::{format_bytes, path_to_agnostic_relative}, setup_logger, sql::{CompOp, dbfmt, dbfmt_comp, dbfmt_t, query_single_row_to_tuple, query_to_i64, query_to_tuples}, watch_for_quit, where_sql
+	self, asyncs::{TxLevel, TxMsg}, datetime::naivedate_to_local, paths::{format_bytes, path_to_agnostic_relative}, setup_logger, rusqlite::{query_single_row_to_tuple, query_to_i64, query_to_tuples}, sql::{CompOp, dbfmt, dbfmt_comp, dbfmt_t}, watch_for_quit, where_sql
 };
 use log::*;
 use regex::Regex;
@@ -23,7 +23,7 @@ pub mod sqlstatements;
 use sqlstatements::sql_initialise;
 
 fn main() {
-	setup_logger(LevelFilter::Info, None, "", "");
+	setup_logger(LevelFilter::Info, true, None, "", "");
 
     let keep_going = Arc::new(AtomicBool::new(true));
     let keep_going_flag = keep_going.clone();

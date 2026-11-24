@@ -11,7 +11,7 @@ crc-fast = "1"
 dirs = "7"
 extract_text = { git = "https://github.com/rayzinnz/rust-extract-text.git" }
 futures-lite = "2"
-helper_lib = { git = "https://github.com/rayzinnz/rust-helper-lib.git", features = ["log", "datetime", "paths", "quitter", "sql"] }
+helper_lib = { git = "https://github.com/rayzinnz/rust-helper-lib.git", features = ["log", "datetime", "paths", "quitter", "rusqlite", "sql"] }
 log = "0.x"
 regex = "1"
 rusqlite = { version = "0.x", features = ["bundled"] }
